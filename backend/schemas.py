@@ -125,6 +125,30 @@ class IGDBSearchResult(BaseModel):
     genres: Optional[List[str]] = None
 
 
+class BiosFileOut(BaseModel):
+    id: int
+    filename: str
+    platform_slug: str
+    category: str
+    file_size: int = 0
+    md5: Optional[str] = None
+    sha1: Optional[str] = None
+    description: Optional[str] = None
+    verified: bool = False
+    uploaded_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BiosPlatformInfo(BaseModel):
+    slug: str
+    name: str
+    needs: List[str] = []
+    emulators: List[str] = []
+    uploaded_count: int = 0
+
+
 class DownloadCreate(BaseModel):
     url: str
     platform_slug: Optional[str] = None

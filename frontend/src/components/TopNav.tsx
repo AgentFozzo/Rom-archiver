@@ -31,6 +31,7 @@ export default function TopNav() {
     { path: '/', label: 'HOME' },
     { path: '/collections', label: 'COLLECTIONS' },
     { path: '/downloads', label: 'DOWNLOADS' },
+    { path: '/system-files', label: 'SYSTEM FILES' },
   ]
 
   const isActivePath = (path: string) => {

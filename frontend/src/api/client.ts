@@ -1,6 +1,7 @@
 import type {
   Platform, Game, GamesResponse, ScanStatus, DatFile,
-  Settings, Stats, IGDBSearchResult, Download, PlatformOption
+  Settings, Stats, IGDBSearchResult, Download, PlatformOption,
+  BiosFile, BiosPlatformInfo
 } from '../types'
 
 const BASE = '/api'
@@ -109,3 +110,27 @@ export const deleteDownload = (id: number) =>
   request<{ ok: boolean }>(`/downloads/${id}`, { method: 'DELETE' })
 
 export const getPlatformOptions = () => request<PlatformOption[]>('/downloads/platforms')
+
+// BIOS / System Files
+export const getBiosFiles = (platform_slug?: string) => {
+  const qs = platform_slug ? `?platform_slug=${platform_slug}` : ''
+  return request<BiosFile[]>(`/bios${qs}`)
+}
+
+export const getBiosPlatforms = () => request<BiosPlatformInfo[]>('/bios/platforms')
+
+export const uploadBiosFiles = (files: File[], platform_slug?: string) => {
+  const form = new FormData()
+  for (const file of files) {
+    form.append('files', file)
+  }
+  const qs = platform_slug ? `?platform_slug=${platform_slug}` : ''
+  return request<BiosFile[]>(`/bios/upload${qs}`, { method: 'POST', body: form })
+}
+
+export const downloadBiosFile = (id: number) => {
+  window.location.href = `/api/bios/${id}/download`
+}
+
+export const deleteBiosFile = (id: number) =>
+  request<{ ok: boolean }>(`/bios/${id}`, { method: 'DELETE' })

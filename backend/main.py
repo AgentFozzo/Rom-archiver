@@ -20,6 +20,7 @@ from database import get_db, init_db
 from scanner import scan_library, get_scan_status, fetch_igdb_metadata, process_rom_file
 from dat_parser import DatParser, PLATFORM_DISPLAY_NAMES
 from downloader import process_download, active_downloads
+from bios_db import lookup_bios_by_md5, lookup_bios_by_filename, PLATFORM_BIOS_INFO
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -393,6 +394,160 @@ async def start_scan(background_tasks: BackgroundTasks, db: AsyncSession = Depen
 @app.get("/api/scan/status", response_model=schemas.ScanStatus)
 async def scan_status():
     return get_scan_status()
+
+
+# ─── BIOS / System Files ──────────────────────────────────────────────────────
+
+@app.get("/api/bios", response_model=List[schemas.BiosFileOut])
+async def list_bios(
+    platform_slug: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(models.BiosFile).order_by(models.BiosFile.platform_slug, models.BiosFile.filename)
+    if platform_slug:
+        query = query.where(models.BiosFile.platform_slug == platform_slug)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@app.get("/api/bios/platforms", response_model=List[schemas.BiosPlatformInfo])
+async def list_bios_platforms(db: AsyncSession = Depends(get_db)):
+    # Count uploaded files per platform
+    count_result = await db.execute(
+        select(models.BiosFile.platform_slug, func.count())
+        .group_by(models.BiosFile.platform_slug)
+    )
+    counts = {row[0]: row[1] for row in count_result}
+
+    out = []
+    for slug, info in PLATFORM_BIOS_INFO.items():
+        out.append(schemas.BiosPlatformInfo(
+            slug=slug,
+            name=info["name"],
+            needs=info.get("needs", []),
+            emulators=info.get("emulators", []),
+            uploaded_count=counts.get(slug, 0),
+        ))
+    return out
+
+
+@app.post("/api/bios/upload", response_model=List[schemas.BiosFileOut])
+async def upload_bios(
+    files: List[UploadFile] = File(...),
+    platform_slug: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    from scanner import _compute_hashes_sync
+
+    bios_dir = f"{DATA_PATH}/bios"
+    os.makedirs(bios_dir, exist_ok=True)
+
+    uploaded = []
+
+    for file in files:
+        if not file.filename:
+            continue
+
+        # Save to temp first
+        temp_path = os.path.join(bios_dir, f".tmp_{file.filename}")
+        try:
+            with open(temp_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+
+            # Hash it
+            hashes = _compute_hashes_sync(temp_path)
+            md5 = hashes.get("md5", "")
+            sha1 = hashes.get("sha1", "")
+            file_size = os.path.getsize(temp_path)
+
+            # Try to identify by hash or filename
+            known = lookup_bios_by_md5(md5)
+            if not known:
+                known = lookup_bios_by_filename(file.filename)
+
+            detected_platform = platform_slug
+            description = None
+            category = "bios"
+            verified = False
+
+            if known:
+                detected_platform = detected_platform or known.get("platform")
+                description = known.get("description")
+                category = known.get("category", "bios")
+                verified = True
+
+            if not detected_platform:
+                detected_platform = "other"
+
+            # Move to platform subfolder
+            platform_dir = os.path.join(bios_dir, detected_platform)
+            os.makedirs(platform_dir, exist_ok=True)
+            final_path = os.path.join(platform_dir, file.filename)
+
+            # Avoid overwriting
+            if os.path.exists(final_path):
+                # Replace existing
+                os.remove(final_path)
+                # Also remove old DB entry
+                await db.execute(
+                    delete(models.BiosFile).where(models.BiosFile.file_path == final_path)
+                )
+
+            os.rename(temp_path, final_path)
+
+            bios = models.BiosFile(
+                filename=file.filename,
+                platform_slug=detected_platform,
+                category=category,
+                file_path=final_path,
+                file_size=file_size,
+                md5=md5,
+                sha1=sha1,
+                description=description,
+                verified=verified,
+            )
+            db.add(bios)
+            await db.flush()
+            uploaded.append(bios)
+
+        except Exception as e:
+            logger.error(f"Failed to upload BIOS file {file.filename}: {e}")
+            if os.path.isfile(temp_path):
+                os.remove(temp_path)
+            continue
+
+    await db.commit()
+    for b in uploaded:
+        await db.refresh(b)
+    return uploaded
+
+
+@app.get("/api/bios/{bios_id}/download")
+async def download_bios(bios_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(models.BiosFile).where(models.BiosFile.id == bios_id))
+    bios = result.scalar_one_or_none()
+    if not bios:
+        raise HTTPException(404, "BIOS file not found")
+    if not os.path.isfile(bios.file_path):
+        raise HTTPException(404, "File not found on disk")
+    return FileResponse(
+        path=bios.file_path,
+        filename=bios.filename,
+        media_type="application/octet-stream",
+    )
+
+
+@app.delete("/api/bios/{bios_id}")
+async def delete_bios(bios_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(models.BiosFile).where(models.BiosFile.id == bios_id))
+    bios = result.scalar_one_or_none()
+    if not bios:
+        raise HTTPException(404, "BIOS file not found")
+    if os.path.isfile(bios.file_path):
+        os.remove(bios.file_path)
+    await db.delete(bios)
+    await db.commit()
+    return {"ok": True}
 
 
 # ─── DAT Files ─────────────────────────────────────────────────────────────────

@@ -76,6 +76,22 @@ class DatEntry(Base):
     size = Column(BigInteger, nullable=True)
 
 
+class BiosFile(Base):
+    __tablename__ = "bios_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, nullable=False)
+    platform_slug = Column(String, nullable=False, index=True)
+    category = Column(String, default="bios")  # bios, firmware, keys, other
+    file_path = Column(String, nullable=False, unique=True)
+    file_size = Column(BigInteger, default=0)
+    md5 = Column(String, nullable=True)
+    sha1 = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    verified = Column(Boolean, default=False)
+    uploaded_at = Column(DateTime, server_default=func.now())
+
+
 class Download(Base):
     __tablename__ = "downloads"
 

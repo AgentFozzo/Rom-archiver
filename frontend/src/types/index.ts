@@ -104,3 +104,24 @@ export interface PlatformOption {
   slug: string
   name: string
 }
+
+export interface BiosFile {
+  id: number
+  filename: string
+  platform_slug: string
+  category: string
+  file_size: number
+  md5?: string
+  sha1?: string
+  description?: string
+  verified: boolean
+  uploaded_at?: string
+}
+
+export interface BiosPlatformInfo {
+  slug: string
+  name: string
+  needs: string[]
+  emulators: string[]
+  uploaded_count: number
+}
