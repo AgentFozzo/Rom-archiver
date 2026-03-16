@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getSettings, updateSettings, getDats, importDats, deleteDat, startScan, getScanStatus } from '../api/client'
 import type { Settings } from '../types'
 import {
-  Save, Upload, Trash2, RefreshCw, CheckCircle,
-  Eye, EyeOff, Loader2, ExternalLink, Database, ArrowLeft
+  Save, Upload, Trash2, RefreshCw, CheckCircle, AlertCircle,
+  Eye, EyeOff, Loader2, ExternalLink, Database, ArrowLeft, FileCheck
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
@@ -14,7 +14,14 @@ export default function SettingsPage() {
   const [form, setForm] = useState<Settings | null>(null)
   const [showSecret, setShowSecret] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
-  const [importing, setImporting] = useState(false)
+  const [importState, setImportState] = useState<{
+    active: boolean
+    total: number
+    current: number
+    currentFile: string
+    completed: string[]
+    failed: string[]
+  }>({ active: false, total: 0, current: 0, currentFile: '', completed: [], failed: [] })
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: getSettings })
   const { data: dats = [] } = useQuery({ queryKey: ['dats'], queryFn: getDats })
@@ -51,19 +58,50 @@ export default function SettingsPage() {
     const fileList = e.target.files
     if (!fileList || fileList.length === 0) return
     const files = Array.from(fileList)
-    setImporting(true)
-    try {
-      const imported = await importDats(files)
-      qc.invalidateQueries({ queryKey: ['dats'] })
-      if (imported.length < files.length) {
-        alert(`Imported ${imported.length} of ${files.length} files. Some may have failed.`)
+
+    setImportState({
+      active: true,
+      total: files.length,
+      current: 0,
+      currentFile: files[0].name,
+      completed: [],
+      failed: [],
+    })
+
+    const completed: string[] = []
+    const failed: string[] = []
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      setImportState(prev => ({
+        ...prev,
+        current: i,
+        currentFile: file.name,
+      }))
+
+      try {
+        await importDats([file])
+        completed.push(file.name)
+      } catch {
+        failed.push(file.name)
       }
-    } catch (err) {
-      alert('Failed: ' + (err instanceof Error ? err.message : String(err)))
-    } finally {
-      setImporting(false)
-      e.target.value = ''
+
+      setImportState(prev => ({
+        ...prev,
+        current: i + 1,
+        completed: [...completed],
+        failed: [...failed],
+      }))
     }
+
+    qc.invalidateQueries({ queryKey: ['dats'] })
+
+    // Keep the results visible for a few seconds, then clear
+    setTimeout(() => {
+      setImportState({ active: false, total: 0, current: 0, currentFile: '', completed: [], failed: [] })
+    }, 4000)
+
+    e.target.value = ''
   }
 
   if (!form) {
@@ -175,15 +213,76 @@ export default function SettingsPage() {
 
       {/* DAT Files */}
       <Section title="No-Intro / Redump DATs">
+        {/* Upload area */}
         <label className={clsx(
-          'flex items-center justify-center gap-2 border border-dashed border-steam-border rounded-lg p-4 cursor-pointer',
-          'hover:border-steam-blue/30 transition-colors',
-          importing && 'opacity-50 pointer-events-none'
+          'flex items-center justify-center gap-2 border border-dashed rounded-lg p-4 cursor-pointer transition-colors',
+          importState.active
+            ? 'border-steam-blue/30 opacity-50 pointer-events-none'
+            : 'border-steam-border hover:border-steam-blue/30'
         )}>
-          {importing ? <Loader2 size={14} className="animate-spin text-steam-blue" /> : <Upload size={14} className="text-steam-dim" />}
-          <span className="text-steam-dim text-xs">{importing ? 'Importing...' : 'Upload .dat files (select multiple)'}</span>
-          <input type="file" accept=".dat" multiple onChange={handleDatUpload} className="hidden" disabled={importing} />
+          <Upload size={14} className="text-steam-dim" />
+          <span className="text-steam-dim text-xs">Upload .dat files (select multiple)</span>
+          <input type="file" accept=".dat" multiple onChange={handleDatUpload} className="hidden" disabled={importState.active} />
         </label>
+
+        {/* Import progress */}
+        {(importState.active || importState.completed.length > 0 || importState.failed.length > 0) && importState.total > 0 && (
+          <div className="mt-3 bg-steam-bg-deep border border-steam-border rounded-lg p-3 space-y-2.5 animate-fade-in">
+            {/* Progress bar */}
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="text-steam-text font-medium flex items-center gap-1.5">
+                  {importState.current < importState.total ? (
+                    <><Loader2 size={11} className="animate-spin text-steam-blue" /> Importing...</>
+                  ) : importState.failed.length === 0 ? (
+                    <><CheckCircle size={11} className="text-steam-verified" /> All done!</>
+                  ) : (
+                    <><AlertCircle size={11} className="text-steam-warning" /> Completed with errors</>
+                  )}
+                </span>
+                <span className="text-steam-muted">
+                  {importState.current} / {importState.total}
+                </span>
+              </div>
+              <div className="h-1.5 bg-steam-border rounded-full overflow-hidden">
+                <div
+                  className={clsx(
+                    'h-full rounded-full transition-all duration-300',
+                    importState.current >= importState.total
+                      ? importState.failed.length > 0 ? 'bg-steam-warning' : 'bg-steam-verified'
+                      : 'bg-steam-blue'
+                  )}
+                  style={{ width: `${Math.round((importState.current / importState.total) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Current file being processed */}
+            {importState.active && importState.current < importState.total && (
+              <p className="text-steam-dim text-[10px] truncate">
+                Processing: {importState.currentFile}
+              </p>
+            )}
+
+            {/* Results list */}
+            {(importState.completed.length > 0 || importState.failed.length > 0) && (
+              <div className="max-h-32 overflow-y-auto space-y-0.5">
+                {importState.completed.map(name => (
+                  <div key={name} className="flex items-center gap-1.5 text-[10px]">
+                    <FileCheck size={10} className="text-steam-verified flex-shrink-0" />
+                    <span className="text-steam-muted truncate">{name}</span>
+                  </div>
+                ))}
+                {importState.failed.map(name => (
+                  <div key={name} className="flex items-center gap-1.5 text-[10px]">
+                    <AlertCircle size={10} className="text-steam-danger flex-shrink-0" />
+                    <span className="text-steam-danger/70 truncate">{name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {dats.length > 0 && (
           <div className="space-y-1.5 mt-3">
             {dats.map(dat => (
