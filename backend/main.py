@@ -403,60 +403,72 @@ async def list_dats(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
-@app.post("/api/dats/import", response_model=schemas.DatFileOut)
-async def import_dat(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
-    if not file.filename.endswith(".dat"):
-        raise HTTPException(400, "Only .dat files are accepted")
-
+@app.post("/api/dats/import", response_model=List[schemas.DatFileOut])
+async def import_dats(files: List[UploadFile] = File(...), db: AsyncSession = Depends(get_db)):
     dats_dir = f"{DATA_PATH}/dats"
     os.makedirs(dats_dir, exist_ok=True)
-    dest_path = os.path.join(dats_dir, file.filename)
 
-    with open(dest_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    imported = []
+    errors = []
 
-    parser = DatParser(dest_path)
-    try:
-        header, entries = parser.parse()
-    except ValueError as e:
-        os.remove(dest_path)
-        raise HTTPException(400, str(e))
+    for file in files:
+        if not file.filename or not file.filename.endswith(".dat"):
+            errors.append(f"{file.filename or 'unknown'}: not a .dat file")
+            continue
 
-    # Detect platform
-    platform_slug = parser.detect_platform_slug()
-    platform_id = None
-    if platform_slug:
-        result = await db.execute(select(models.Platform).where(models.Platform.slug == platform_slug))
-        platform = result.scalar_one_or_none()
-        if platform:
-            platform_id = platform.id
+        dest_path = os.path.join(dats_dir, file.filename)
+        try:
+            with open(dest_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
 
-    dat_name = header.get("name") or file.filename
+            parser = DatParser(dest_path)
+            header, entries = parser.parse()
 
-    dat_file = models.DatFile(
-        name=dat_name,
-        platform_id=platform_id,
-        file_path=dest_path,
-        entry_count=len(entries),
-    )
-    db.add(dat_file)
-    await db.flush()
+            # Detect platform
+            platform_slug = parser.detect_platform_slug()
+            platform_id = None
+            if platform_slug:
+                result = await db.execute(select(models.Platform).where(models.Platform.slug == platform_slug))
+                platform = result.scalar_one_or_none()
+                if platform:
+                    platform_id = platform.id
 
-    # Bulk insert entries
-    for entry in entries:
-        db.add(models.DatEntry(
-            dat_file_id=dat_file.id,
-            game_name=entry["game_name"],
-            rom_name=entry["rom_name"],
-            crc32=entry.get("crc32"),
-            md5=entry.get("md5"),
-            sha1=entry.get("sha1"),
-            size=entry.get("size"),
-        ))
+            dat_name = header.get("name") or file.filename
 
-    await db.commit()
-    await db.refresh(dat_file)
-    return dat_file
+            dat_file = models.DatFile(
+                name=dat_name,
+                platform_id=platform_id,
+                file_path=dest_path,
+                entry_count=len(entries),
+            )
+            db.add(dat_file)
+            await db.flush()
+
+            for entry in entries:
+                db.add(models.DatEntry(
+                    dat_file_id=dat_file.id,
+                    game_name=entry["game_name"],
+                    rom_name=entry["rom_name"],
+                    crc32=entry.get("crc32"),
+                    md5=entry.get("md5"),
+                    sha1=entry.get("sha1"),
+                    size=entry.get("size"),
+                ))
+
+            await db.commit()
+            await db.refresh(dat_file)
+            imported.append(dat_file)
+
+        except Exception as e:
+            errors.append(f"{file.filename}: {str(e)}")
+            if os.path.isfile(dest_path):
+                os.remove(dest_path)
+            continue
+
+    if not imported and errors:
+        raise HTTPException(400, "; ".join(errors))
+
+    return imported
 
 
 @app.delete("/api/dats/{dat_id}")

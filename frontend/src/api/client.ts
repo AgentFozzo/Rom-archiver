@@ -65,10 +65,12 @@ export const getScanStatus = () => request<ScanStatus>('/scan/status')
 // DATs
 export const getDats = () => request<DatFile[]>('/dats')
 
-export const importDat = (file: File) => {
+export const importDats = (files: File[]) => {
   const form = new FormData()
-  form.append('file', file)
-  return request<DatFile>('/dats/import', { method: 'POST', body: form })
+  for (const file of files) {
+    form.append('files', file)
+  }
+  return request<DatFile[]>('/dats/import', { method: 'POST', body: form })
 }
 
 export const deleteDat = (id: number) =>

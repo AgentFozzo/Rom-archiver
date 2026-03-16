@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getSettings, updateSettings, getDats, importDat, deleteDat, startScan, getScanStatus } from '../api/client'
+import { getSettings, updateSettings, getDats, importDats, deleteDat, startScan, getScanStatus } from '../api/client'
 import type { Settings } from '../types'
 import {
   Save, Upload, Trash2, RefreshCw, CheckCircle,
@@ -48,12 +48,16 @@ export default function SettingsPage() {
   })
 
   const handleDatUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const fileList = e.target.files
+    if (!fileList || fileList.length === 0) return
+    const files = Array.from(fileList)
     setImporting(true)
     try {
-      await importDat(file)
+      const imported = await importDats(files)
       qc.invalidateQueries({ queryKey: ['dats'] })
+      if (imported.length < files.length) {
+        alert(`Imported ${imported.length} of ${files.length} files. Some may have failed.`)
+      }
     } catch (err) {
       alert('Failed: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
@@ -177,8 +181,8 @@ export default function SettingsPage() {
           importing && 'opacity-50 pointer-events-none'
         )}>
           {importing ? <Loader2 size={14} className="animate-spin text-steam-blue" /> : <Upload size={14} className="text-steam-dim" />}
-          <span className="text-steam-dim text-xs">{importing ? 'Importing...' : 'Upload .dat file'}</span>
-          <input type="file" accept=".dat" onChange={handleDatUpload} className="hidden" disabled={importing} />
+          <span className="text-steam-dim text-xs">{importing ? 'Importing...' : 'Upload .dat files (select multiple)'}</span>
+          <input type="file" accept=".dat" multiple onChange={handleDatUpload} className="hidden" disabled={importing} />
         </label>
         {dats.length > 0 && (
           <div className="space-y-1.5 mt-3">
