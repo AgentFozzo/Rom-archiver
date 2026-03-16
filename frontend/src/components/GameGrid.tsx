@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getGames } from '../api/client'
 import GameCard from './GameCard'
-import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 
 interface Props {
@@ -26,21 +26,16 @@ export default function GameGrid({ platformId, search, title }: Props) {
 
   const totalPages = data ? Math.ceil(data.total / limit) : 0
 
-  const sortOptions: { key: SortKey; label: string }[] = [
-    { key: 'title', label: 'Title' },
-    { key: 'rating', label: 'Rating' },
-    { key: 'release_date', label: 'Release Year' },
-    { key: 'file_size', label: 'File Size' },
-  ]
-
   return (
-    <div>
-      {/* Header row */}
-      <div className="flex items-center justify-between mb-6 gap-4">
+    <div className="px-6 py-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-xl font-bold text-steam-text">{title || 'All Games'}</h2>
+          <h2 className="text-sm font-bold text-steam-text uppercase tracking-wider">
+            {title || 'All Games'}
+          </h2>
           {data && (
-            <p className="text-steam-muted text-sm mt-0.5">
+            <p className="text-steam-dim text-xs mt-0.5">
               {data.total.toLocaleString()} game{data.total !== 1 ? 's' : ''}
             </p>
           )}
@@ -48,69 +43,56 @@ export default function GameGrid({ platformId, search, title }: Props) {
 
         {/* Sort controls */}
         <div className="flex items-center gap-2">
-          <SlidersHorizontal size={15} className="text-steam-muted" />
           <select
             value={sort}
             onChange={(e) => { setSort(e.target.value as SortKey); setPage(1) }}
-            className="bg-steam-card border border-steam-border text-steam-text text-sm
-                       rounded-lg px-3 py-1.5 focus:outline-none focus:border-steam-accent"
+            className="bg-steam-bg-deep border border-steam-border text-steam-muted text-xs
+                       rounded px-2 py-1 focus:outline-none focus:border-steam-blue/50"
           >
-            {sortOptions.map((o) => (
-              <option key={o.key} value={o.key}>{o.label}</option>
-            ))}
+            <option value="title">Title</option>
+            <option value="rating">Rating</option>
+            <option value="release_date">Year</option>
+            <option value="file_size">Size</option>
           </select>
           <button
             onClick={() => setOrder(o => o === 'asc' ? 'desc' : 'asc')}
-            className="bg-steam-card border border-steam-border text-steam-muted hover:text-steam-text
-                       px-3 py-1.5 rounded-lg text-sm transition-colors"
-            title={order === 'asc' ? 'Ascending' : 'Descending'}
+            className="bg-steam-bg-deep border border-steam-border text-steam-dim
+                       px-2 py-1 rounded text-xs hover:text-steam-text transition-colors"
           >
-            {order === 'asc' ? '↑ A–Z' : '↓ Z–A'}
+            {order === 'asc' ? '↑' : '↓'}
           </button>
         </div>
       </div>
 
-      {/* Loading */}
+      {/* Loading skeleton */}
       {isLoading && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="bg-steam-card border border-steam-border rounded-xl overflow-hidden animate-pulse">
-              <div className="aspect-[3/4] bg-steam-surface" />
-              <div className="p-3 space-y-2">
-                <div className="h-3 bg-steam-surface rounded w-3/4" />
-                <div className="h-2 bg-steam-surface rounded w-1/2" />
-              </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+          {Array.from({ length: 16 }).map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="aspect-[3/4] bg-steam-card rounded-lg" />
+              <div className="mt-2 h-3 bg-steam-card rounded w-3/4" />
             </div>
           ))}
         </div>
       )}
 
-      {/* Error */}
       {isError && (
-        <div className="text-center py-20">
-          <p className="text-steam-danger text-lg font-medium">Failed to load games</p>
-          <p className="text-steam-muted text-sm mt-1">Check that the backend is running</p>
+        <div className="text-center py-16">
+          <p className="text-steam-danger text-sm">Failed to load games</p>
         </div>
       )}
 
-      {/* Empty */}
       {!isLoading && !isError && data?.games.length === 0 && (
-        <div className="text-center py-20">
-          <div className="text-6xl mb-4">🎮</div>
-          <p className="text-steam-text text-lg font-medium">
-            {search ? 'No games found' : 'No ROMs scanned yet'}
-          </p>
-          <p className="text-steam-muted text-sm mt-1">
-            {search
-              ? `No results for "${search}"`
-              : 'Click "Scan Library" in the top bar to get started'}
+        <div className="text-center py-16">
+          <div className="text-5xl mb-3 opacity-30">🎮</div>
+          <p className="text-steam-muted text-sm">
+            {search ? `No results for "${search}"` : 'No games found'}
           </p>
         </div>
       )}
 
-      {/* Grid */}
       {data && data.games.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
           {data.games.map((game) => (
             <GameCard key={game.id} game={game} />
           ))}
@@ -119,20 +101,17 @@ export default function GameGrid({ platformId, search, title }: Props) {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-8">
+        <div className="flex items-center justify-center gap-1.5 mt-6">
           <button
             onClick={() => setPage(p => Math.max(1, p - 1))}
             disabled={page === 1}
             className={clsx(
-              'p-2 rounded-lg border transition-colors',
-              page === 1
-                ? 'border-steam-border text-steam-muted cursor-not-allowed'
-                : 'border-steam-border text-steam-text hover:border-steam-accent hover:text-steam-accent'
+              'p-1.5 rounded text-xs transition-colors',
+              page === 1 ? 'text-steam-dim' : 'text-steam-muted hover:text-white hover:bg-white/5'
             )}
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={14} />
           </button>
-
           {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
             let p: number
             if (totalPages <= 7) p = i + 1
@@ -145,27 +124,24 @@ export default function GameGrid({ platformId, search, title }: Props) {
               key={p}
               onClick={() => setPage(p)}
               className={clsx(
-                'w-9 h-9 rounded-lg text-sm font-medium border transition-colors',
+                'w-7 h-7 rounded text-xs font-medium transition-colors',
                 p === page
-                  ? 'bg-steam-accent text-steam-bg border-steam-accent'
-                  : 'border-steam-border text-steam-muted hover:border-steam-accent hover:text-steam-text'
+                  ? 'bg-steam-blue text-white'
+                  : 'text-steam-muted hover:text-white hover:bg-white/5'
               )}
             >
               {p}
             </button>
           ))}
-
           <button
             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
             className={clsx(
-              'p-2 rounded-lg border transition-colors',
-              page === totalPages
-                ? 'border-steam-border text-steam-muted cursor-not-allowed'
-                : 'border-steam-border text-steam-text hover:border-steam-accent hover:text-steam-accent'
+              'p-1.5 rounded text-xs transition-colors',
+              page === totalPages ? 'text-steam-dim' : 'text-steam-muted hover:text-white hover:bg-white/5'
             )}
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={14} />
           </button>
         </div>
       )}

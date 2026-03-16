@@ -88,6 +88,8 @@ ROM_EXTENSIONS = {
     "arcade": [".zip", ".7z"],
 }
 
+ALL_ROM_EXTENSIONS = {ext for exts in ROM_EXTENSIONS.values() for ext in exts}
+
 # Extension -> platform slug lookup (for auto-detection)
 EXT_TO_PLATFORM: dict[str, list[str]] = {}
 for _slug, _exts in ROM_EXTENSIONS.items():

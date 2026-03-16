@@ -18,7 +18,8 @@ import schemas
 import igdb as igdb_client
 from database import get_db, init_db
 from scanner import scan_library, get_scan_status, fetch_igdb_metadata, process_rom_file
-from dat_parser import DatParser
+from dat_parser import DatParser, PLATFORM_DISPLAY_NAMES
+from downloader import process_download, active_downloads
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -510,6 +511,67 @@ async def update_settings(body: schemas.SettingsOut, db: AsyncSession = Depends(
             db.add(models.Setting(key=key, value=value))
     await db.commit()
     return {"ok": True}
+
+
+# ─── Downloads ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/downloads", response_model=List[schemas.DownloadOut])
+async def list_downloads(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.Download).order_by(models.Download.created_at.desc()).limit(50)
+    )
+    downloads = result.scalars().all()
+    # Merge live progress for active downloads
+    out = []
+    for dl in downloads:
+        d = schemas.DownloadOut.model_validate(dl)
+        if dl.id in active_downloads:
+            live = active_downloads[dl.id]
+            d.downloaded_bytes = live.get("downloaded_bytes", d.downloaded_bytes)
+            d.total_bytes = live.get("total_bytes", d.total_bytes)
+            d.speed_bps = live.get("speed_bps", d.speed_bps)
+            d.progress = live.get("progress", d.progress)
+        out.append(d)
+    return out
+
+
+@app.post("/api/downloads", response_model=schemas.DownloadOut)
+async def create_download(
+    body: schemas.DownloadCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    dl = models.Download(
+        url=body.url,
+        platform_slug=body.platform_slug,
+        status="pending",
+    )
+    db.add(dl)
+    await db.commit()
+    await db.refresh(dl)
+
+    from database import AsyncSessionLocal
+    background_tasks.add_task(process_download, dl.id, AsyncSessionLocal)
+    return dl
+
+
+@app.delete("/api/downloads/{download_id}")
+async def delete_download(download_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.Download).where(models.Download.id == download_id)
+    )
+    dl = result.scalar_one_or_none()
+    if not dl:
+        raise HTTPException(404, "Download not found")
+    await db.delete(dl)
+    await db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/downloads/platforms")
+async def get_platform_options():
+    """Return available platform slugs for the download form."""
+    return [{"slug": k, "name": v} for k, v in PLATFORM_DISPLAY_NAMES.items()]
 
 
 # ─── Stats ─────────────────────────────────────────────────────────────────────

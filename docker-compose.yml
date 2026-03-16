@@ -7,7 +7,7 @@ services:
     ports:
       - "8096:8096"
     volumes:
-      - /mnt/user/roms:/roms:ro          # Your ROM library (read-only)
+      - /mnt/user/roms:/roms              # Your ROM library (read-write for download manager)
       - /mnt/user/appdata/rom-archiver:/data  # Persistent data (DB, DATs, images)
     environment:
       - IGDB_CLIENT_ID=${IGDB_CLIENT_ID:-}

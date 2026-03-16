@@ -123,3 +123,27 @@ class IGDBSearchResult(BaseModel):
     rating: Optional[float] = None
     release_date: Optional[int] = None
     genres: Optional[List[str]] = None
+
+
+class DownloadCreate(BaseModel):
+    url: str
+    platform_slug: Optional[str] = None
+
+
+class DownloadOut(BaseModel):
+    id: int
+    url: str
+    filename: Optional[str] = None
+    status: str
+    progress: float
+    total_bytes: Optional[int] = None
+    downloaded_bytes: int = 0
+    speed_bps: int = 0
+    platform_slug: Optional[str] = None
+    game_id: Optional[int] = None
+    error: Optional[str] = None
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

@@ -1,8 +1,10 @@
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getStats } from '../api/client'
+import { getGames, getStats, getPlatforms } from '../api/client'
+import GameShelf from '../components/GameShelf'
 import GameGrid from '../components/GameGrid'
-import { Database, Gamepad2, ShieldCheck, HardDrive } from 'lucide-react'
+import { Gamepad2, Database, ShieldCheck, HardDrive } from 'lucide-react'
+import type { Game } from '../types'
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -22,52 +24,104 @@ export default function Library() {
     staleTime: 30_000,
   })
 
+  const { data: platforms = [] } = useQuery({
+    queryKey: ['platforms'],
+    queryFn: getPlatforms,
+    staleTime: 60_000,
+  })
+
+  // Recent games (sorted by created_at)
+  const { data: recentData } = useQuery({
+    queryKey: ['games', 'recent'],
+    queryFn: () => getGames({ sort: 'title', order: 'desc', limit: 20 }),
+    staleTime: 30_000,
+  })
+
+  // Top rated games
+  const { data: topRatedData } = useQuery({
+    queryKey: ['games', 'top-rated'],
+    queryFn: () => getGames({ sort: 'rating', order: 'desc', limit: 20 }),
+    staleTime: 30_000,
+  })
+
+  // Per-platform shelves (top 3 platforms with games)
+  const topPlatforms = platforms.filter(p => p.game_count > 0).slice(0, 4)
+
+  const platformQueries = topPlatforms.map(p =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useQuery({
+      queryKey: ['games', 'platform-shelf', p.id],
+      queryFn: () => getGames({ platform_id: p.id, sort: 'rating', order: 'desc', limit: 15 }),
+      staleTime: 60_000,
+    })
+  )
+
+  // If searching, show grid
+  if (search) {
+    return <GameGrid search={search} title={`Search: "${search}"`} />
+  }
+
+  const recentGames = recentData?.games ?? []
+  const topRated = topRatedData?.games ?? []
+
   return (
-    <div className="animate-fade-in">
-      {/* Stats bar - only show when not searching */}
-      {!search && stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatCard
-            icon={<Gamepad2 size={20} className="text-steam-accent" />}
-            label="Total Games"
-            value={stats.total_games.toLocaleString()}
-          />
-          <StatCard
-            icon={<Database size={20} className="text-purple-400" />}
-            label="Platforms"
-            value={stats.total_platforms.toLocaleString()}
-          />
-          <StatCard
-            icon={<ShieldCheck size={20} className="text-steam-verified" />}
-            label="DAT Verified"
-            value={stats.verified_games.toLocaleString()}
-          />
-          <StatCard
-            icon={<HardDrive size={20} className="text-orange-400" />}
-            label="Total Size"
-            value={formatBytes(stats.total_size_bytes)}
-          />
+    <div className="animate-fade-in pb-8">
+      {/* Hero stats bar */}
+      {stats && stats.total_games > 0 && (
+        <div className="px-6 pt-6 pb-4">
+          <div className="flex items-center gap-6">
+            <StatPill icon={<Gamepad2 size={13} />} value={stats.total_games} label="Games" color="text-steam-blue" />
+            <StatPill icon={<Database size={13} />} value={stats.total_platforms} label="Platforms" color="text-purple-400" />
+            <StatPill icon={<ShieldCheck size={13} />} value={stats.verified_games} label="Verified" color="text-steam-verified" />
+            <StatPill icon={<HardDrive size={13} />} value={formatBytes(stats.total_size_bytes)} label="Total" color="text-orange-400" />
+          </div>
         </div>
       )}
 
-      <GameGrid
-        search={search}
-        title={search ? `Search: "${search}"` : 'All Games'}
-      />
+      {/* Empty state */}
+      {stats && stats.total_games === 0 && (
+        <div className="flex flex-col items-center justify-center h-96 gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-steam-card flex items-center justify-center">
+            <Gamepad2 size={32} className="text-steam-dim" />
+          </div>
+          <div className="text-center">
+            <h2 className="text-steam-text text-lg font-semibold mb-1">Welcome to ROM Archiver</h2>
+            <p className="text-steam-muted text-sm">
+              Click the scan button in the top-right to scan your ROM library,<br />
+              or go to Downloads to add ROMs by URL.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Games shelf */}
+      <GameShelf title="Recent Games" games={recentGames} large />
+
+      {/* Top Rated shelf */}
+      {topRated.filter(g => g.rating).length > 0 && (
+        <GameShelf title="Top Rated" games={topRated.filter(g => g.rating)} />
+      )}
+
+      {/* Platform shelves */}
+      {topPlatforms.map((p, i) => {
+        const games = platformQueries[i]?.data?.games ?? []
+        return <GameShelf key={p.id} title={p.name} games={games} />
+      })}
     </div>
   )
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function StatPill({ icon, value, label, color }: {
+  icon: React.ReactNode
+  value: number | string
+  label: string
+  color: string
+}) {
   return (
-    <div className="bg-steam-card border border-steam-border rounded-xl p-4 flex items-center gap-4">
-      <div className="w-10 h-10 rounded-lg bg-steam-surface flex items-center justify-center flex-shrink-0">
-        {icon}
-      </div>
-      <div>
-        <p className="text-steam-muted text-xs font-medium">{label}</p>
-        <p className="text-steam-text text-xl font-bold">{value}</p>
-      </div>
+    <div className="flex items-center gap-2">
+      <span className={color}>{icon}</span>
+      <span className="text-steam-text text-sm font-bold">{value}</span>
+      <span className="text-steam-dim text-xs">{label}</span>
     </div>
   )
 }

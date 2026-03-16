@@ -1,20 +1,16 @@
+import { useState, useMemo } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getPlatforms } from '../api/client'
-import { Gamepad2, Library, Settings, ChevronRight } from 'lucide-react'
+import { getPlatforms, getGames } from '../api/client'
+import { Search, ChevronDown, ChevronRight, Filter } from 'lucide-react'
 import clsx from 'clsx'
-
-const PLATFORM_ICONS: Record<string, string> = {
-  nes: '🎮', snes: '🕹️', n64: '🟦', gb: '🟩', gbc: '🌈', gba: '💜',
-  nds: '📱', '3ds': '📱', gamecube: '🟣', wii: '⬜', genesis: '⬛',
-  mastersystem: '⬛', gamegear: '🟡', saturn: '⬜', dreamcast: '🌀',
-  ps1: '🔵', ps2: '🔵', psp: '🔷', atari2600: '🟠', atari7800: '🟠',
-  arcade: '🕹️', other: '📁',
-}
+import type { Game } from '../types'
 
 export default function Sidebar() {
   const location = useLocation()
-  const { platformId } = useParams()
+  const { gameId } = useParams()
+  const [search, setSearch] = useState('')
+  const [expandedPlatforms, setExpandedPlatforms] = useState<Set<number>>(new Set())
 
   const { data: platforms = [] } = useQuery({
     queryKey: ['platforms'],
@@ -22,92 +18,150 @@ export default function Sidebar() {
     staleTime: 60_000,
   })
 
-  const isActive = (path: string) => location.pathname === path
+  // Load all games for sidebar list
+  const { data: allGames } = useQuery({
+    queryKey: ['all-games-sidebar'],
+    queryFn: () => getGames({ limit: 5000, sort: 'title', order: 'asc' }),
+    staleTime: 30_000,
+  })
+
+  const games = allGames?.games ?? []
+
+  // Group games by platform
+  const grouped = useMemo(() => {
+    const filtered = search
+      ? games.filter(g => g.title.toLowerCase().includes(search.toLowerCase()))
+      : games
+    const map = new Map<number, Game[]>()
+    for (const g of filtered) {
+      const list = map.get(g.platform_id) || []
+      list.push(g)
+      map.set(g.platform_id, list)
+    }
+    return map
+  }, [games, search])
+
+  const togglePlatform = (id: number) => {
+    setExpandedPlatforms(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // Auto-expand all when searching
+  const isExpanded = (id: number) => search ? true : expandedPlatforms.has(id)
 
   return (
-    <aside className="w-64 bg-steam-surface border-r border-steam-border flex flex-col flex-shrink-0">
-      {/* Logo */}
-      <div className="p-5 border-b border-steam-border">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-steam-accent to-steam-accent-dark flex items-center justify-center shadow-glow">
-            <Gamepad2 size={20} className="text-steam-bg" />
-          </div>
-          <div>
-            <h1 className="text-steam-text font-bold text-base leading-tight">ROM Archiver</h1>
-            <p className="text-steam-muted text-xs">Game Library</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <nav className="p-3 border-b border-steam-border">
-        <Link
-          to="/"
-          className={clsx(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
-            isActive('/')
-              ? 'bg-steam-accent text-steam-bg'
-              : 'text-steam-muted hover:text-steam-text hover:bg-steam-card'
-          )}
-        >
-          <Library size={16} />
-          All Games
-        </Link>
-      </nav>
-
-      {/* Platforms */}
-      <div className="flex-1 overflow-y-auto p-3">
-        <p className="text-xs font-semibold text-steam-muted uppercase tracking-wider px-3 mb-2">
-          Platforms
-        </p>
-        <div className="space-y-0.5">
-          {platforms.map((p) => (
-            <Link
-              key={p.id}
-              to={`/platform/${p.id}`}
-              className={clsx(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all group',
-                String(p.id) === platformId
-                  ? 'bg-steam-accent/20 text-steam-accent border border-steam-accent/30'
-                  : 'text-steam-muted hover:text-steam-text hover:bg-steam-card'
-              )}
+    <aside className="w-56 bg-steam-bg flex flex-col flex-shrink-0 border-r border-steam-border">
+      {/* Search */}
+      <div className="p-2">
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steam-dim" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search..."
+            className="w-full bg-steam-bg-deep border border-steam-border rounded pl-8 pr-3 py-1.5
+                       text-xs text-steam-text placeholder-steam-dim focus:outline-none
+                       focus:border-steam-blue/50 transition-colors"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-steam-dim hover:text-steam-text text-xs"
             >
-              <span className="text-base w-5 text-center flex-shrink-0">
-                {PLATFORM_ICONS[p.slug] ?? '🎮'}
-              </span>
-              <span className="flex-1 truncate">{p.name}</span>
-              <span className={clsx(
-                'text-xs px-1.5 py-0.5 rounded-full flex-shrink-0',
-                String(p.id) === platformId
-                  ? 'bg-steam-accent/20 text-steam-accent'
-                  : 'bg-steam-border text-steam-muted group-hover:bg-steam-card-hover'
-              )}>
-                {p.game_count}
-              </span>
-            </Link>
-          ))}
-          {platforms.length === 0 && (
-            <p className="text-steam-muted text-xs px-3 py-4 text-center">
-              No ROMs scanned yet.<br />Go to Settings → Start Scan.
-            </p>
+              ×
+            </button>
           )}
         </div>
       </div>
 
-      {/* Settings */}
-      <div className="p-3 border-t border-steam-border">
+      {/* Game list */}
+      <div className="flex-1 overflow-y-auto">
+        {platforms.map((platform) => {
+          const platformGames = grouped.get(platform.id) || []
+          if (search && platformGames.length === 0) return null
+          const expanded = isExpanded(platform.id)
+
+          return (
+            <div key={platform.id}>
+              {/* Platform header */}
+              <button
+                onClick={() => togglePlatform(platform.id)}
+                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold
+                           text-steam-muted uppercase tracking-wider hover:text-steam-text
+                           transition-colors"
+              >
+                {expanded
+                  ? <ChevronDown size={10} className="flex-shrink-0" />
+                  : <ChevronRight size={10} className="flex-shrink-0" />
+                }
+                <span className="truncate">{platform.name}</span>
+                <span className="ml-auto text-steam-dim font-normal">
+                  ({platformGames.length})
+                </span>
+              </button>
+
+              {/* Game entries */}
+              {expanded && (
+                <div className="pb-1">
+                  {platformGames.map((game) => (
+                    <Link
+                      key={game.id}
+                      to={`/game/${game.id}`}
+                      className={clsx(
+                        'flex items-center gap-2 px-3 py-1 mx-1 rounded text-xs transition-all group',
+                        String(game.id) === gameId
+                          ? 'bg-steam-surface-light text-white'
+                          : 'text-steam-muted hover:text-white hover:bg-white/5'
+                      )}
+                    >
+                      {/* Mini cover */}
+                      {game.cover_url ? (
+                        <img
+                          src={game.cover_url}
+                          alt=""
+                          className="w-4 h-5 object-cover rounded-sm flex-shrink-0 opacity-70
+                                     group-hover:opacity-100 transition-opacity"
+                        />
+                      ) : (
+                        <div className="w-4 h-5 bg-steam-surface rounded-sm flex-shrink-0
+                                        flex items-center justify-center text-[8px] text-steam-dim">
+                          🎮
+                        </div>
+                      )}
+                      <span className="truncate">{game.title}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {/* Empty state */}
+        {platforms.length === 0 && (
+          <div className="px-3 py-8 text-center">
+            <p className="text-steam-dim text-xs">
+              No games yet.<br />
+              Scan your library to get started.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom: Add ROM link */}
+      <div className="p-2 border-t border-steam-border">
         <Link
-          to="/settings"
-          className={clsx(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
-            isActive('/settings')
-              ? 'bg-steam-card text-steam-text'
-              : 'text-steam-muted hover:text-steam-text hover:bg-steam-card'
-          )}
+          to="/downloads"
+          className="flex items-center gap-2 px-3 py-2 rounded text-xs text-steam-muted
+                     hover:text-white hover:bg-white/5 transition-colors"
         >
-          <Settings size={16} />
-          Settings
-          <ChevronRight size={14} className="ml-auto" />
+          <span className="text-steam-blue text-sm">+</span>
+          Add a ROM
         </Link>
       </div>
     </aside>

@@ -76,6 +76,24 @@ class DatEntry(Base):
     size = Column(BigInteger, nullable=True)
 
 
+class Download(Base):
+    __tablename__ = "downloads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    url = Column(String, nullable=False)
+    filename = Column(String, nullable=True)
+    status = Column(String, default="pending")  # pending, downloading, hashing, moving, complete, error
+    progress = Column(Float, default=0)  # 0-100
+    total_bytes = Column(BigInteger, nullable=True)
+    downloaded_bytes = Column(BigInteger, default=0)
+    speed_bps = Column(BigInteger, default=0)
+    platform_slug = Column(String, nullable=True)  # user hint or auto-detected
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=True)
+    error = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime, nullable=True)
+
+
 class Setting(Base):
     __tablename__ = "settings"
 

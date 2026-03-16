@@ -83,3 +83,24 @@ export interface IGDBSearchResult {
   release_date?: number
   genres?: string[]
 }
+
+export interface Download {
+  id: number
+  url: string
+  filename?: string
+  status: 'pending' | 'downloading' | 'hashing' | 'moving' | 'complete' | 'error'
+  progress: number
+  total_bytes?: number
+  downloaded_bytes: number
+  speed_bps: number
+  platform_slug?: string
+  game_id?: number
+  error?: string
+  created_at?: string
+  completed_at?: string
+}
+
+export interface PlatformOption {
+  slug: string
+  name: string
+}

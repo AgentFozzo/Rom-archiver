@@ -1,6 +1,6 @@
 import type {
   Platform, Game, GamesResponse, ScanStatus, DatFile,
-  Settings, Stats, IGDBSearchResult
+  Settings, Stats, IGDBSearchResult, Download, PlatformOption
 } from '../types'
 
 const BASE = '/api'
@@ -52,7 +52,7 @@ export const deleteGame = (id: number) =>
 export const refreshGameMetadata = (id: number) =>
   request<Game>(`/games/${id}/refresh`, { method: 'POST' })
 
-export const downloadGame = (id: number) => {
+export const downloadGameFile = (id: number) => {
   window.location.href = `/api/games/${id}/download`
 }
 
@@ -92,3 +92,18 @@ export const igdbSearch = (q: string, platform_igdb_id?: number) => {
   if (platform_igdb_id) qs.set('platform_igdb_id', String(platform_igdb_id))
   return request<IGDBSearchResult[]>(`/igdb/search?${qs}`)
 }
+
+// Downloads (ROM Download Manager)
+export const getDownloads = () => request<Download[]>('/downloads')
+
+export const createDownload = (url: string, platform_slug?: string) =>
+  request<Download>('/downloads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, platform_slug }),
+  })
+
+export const deleteDownload = (id: number) =>
+  request<{ ok: boolean }>(`/downloads/${id}`, { method: 'DELETE' })
+
+export const getPlatformOptions = () => request<PlatformOption[]>('/downloads/platforms')
