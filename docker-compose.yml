@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  rom-archiver:
+    build: .
+    container_name: rom-archiver
+    ports:
+      - "8096:8096"
+    volumes:
+      - /mnt/user/roms:/roms:ro          # Your ROM library (read-only)
+      - /mnt/user/appdata/rom-archiver:/data  # Persistent data (DB, DATs, images)
+    environment:
+      - IGDB_CLIENT_ID=${IGDB_CLIENT_ID:-}
+      - IGDB_CLIENT_SECRET=${IGDB_CLIENT_SECRET:-}
+      - ROM_PATH=/roms
+      - DATA_PATH=/data
+      - TZ=${TZ:-America/New_York}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8096/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
