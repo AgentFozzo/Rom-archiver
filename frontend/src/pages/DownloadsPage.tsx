@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getDownloads, createDownload, deleteDownload, getPlatformOptions } from '../api/client'
+import {
+  getDownloads, createDownload, deleteDownload, getPlatformOptions,
+  searchGamesForExtra,
+} from '../api/client'
 import { Link } from 'react-router-dom'
 import {
   Download, ArrowDown, CheckCircle, AlertCircle, Trash2,
-  Loader2, Link as LinkIcon, ExternalLink
+  Loader2, Link as LinkIcon, ExternalLink, Package,
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { Download as DownloadType } from '../types'
+import type { Download as DownloadType, ExtraType } from '../types'
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '—'
@@ -24,10 +27,24 @@ function formatSpeed(bps: number): string {
   return `${(bps / 1024 / 1024).toFixed(1)} MB/s`
 }
 
+const EXTRA_TYPE_OPTIONS: { value: ExtraType | ''; label: string }[] = [
+  { value: '',        label: 'ROM (auto-organize)' },
+  { value: 'update',  label: 'Update' },
+  { value: 'dlc',     label: 'DLC' },
+  { value: 'mod',     label: 'Mod / Patch' },
+  { value: 'cheat',   label: 'Cheat Codes' },
+  { value: 'other',   label: 'Other Extra' },
+]
+
 export default function DownloadsPage() {
   const qc = useQueryClient()
   const [url, setUrl] = useState('')
   const [platformSlug, setPlatformSlug] = useState('')
+  const [extraType, setExtraType] = useState<ExtraType | ''>('')
+  const [gameSearch, setGameSearch] = useState('')
+  const [targetGameId, setTargetGameId] = useState<number | null>(null)
+  const [targetGameTitle, setTargetGameTitle] = useState('')
+  const [showGameDropdown, setShowGameDropdown] = useState(false)
 
   const { data: downloads = [] } = useQuery({
     queryKey: ['downloads'],
@@ -44,8 +61,19 @@ export default function DownloadsPage() {
     queryFn: getPlatformOptions,
   })
 
+  const { data: gameSearchResults } = useQuery({
+    queryKey: ['game-search-extra', gameSearch],
+    queryFn: () => searchGamesForExtra(gameSearch),
+    enabled: gameSearch.length >= 2 && !!extraType,
+  })
+
   const createMutation = useMutation({
-    mutationFn: () => createDownload(url, platformSlug || undefined),
+    mutationFn: () => createDownload(
+      url,
+      platformSlug || undefined,
+      extraType || undefined,
+      targetGameId || undefined,
+    ),
     onSuccess: () => {
       setUrl('')
       qc.invalidateQueries({ queryKey: ['downloads'] })
@@ -63,8 +91,11 @@ export default function DownloadsPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!url.trim()) return
+    if (extraType && !targetGameId) return  // must pick a game for extras
     createMutation.mutate()
   }
+
+  const isExtra = !!extraType
 
   const active = downloads.filter(d => ['downloading', 'hashing', 'moving', 'pending'].includes(d.status))
   const completed = downloads.filter(d => d.status === 'complete')
@@ -76,44 +107,126 @@ export default function DownloadsPage() {
         ROM Download Manager
       </h1>
 
-      {/* Add ROM form */}
+      {/* Add ROM / Extra form */}
       <div className="bg-steam-card border border-steam-border rounded-lg p-5 mb-6">
         <h2 className="text-steam-text text-sm font-semibold mb-3 flex items-center gap-2">
           <LinkIcon size={14} className="text-steam-blue" />
-          Add ROM by URL
+          Add by URL
         </h2>
         <p className="text-steam-dim text-xs mb-4">
-          Paste a direct download link. The ROM will be downloaded, hashed, identified, and auto-organized.
+          Paste a direct download link. The file will be downloaded and auto-organized based on the file type selected.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
+          {/* URL + File type row */}
           <div className="flex gap-2">
             <input
               type="url"
               value={url}
               onChange={e => setUrl(e.target.value)}
-              placeholder="https://example.com/rom-file.zip"
+              placeholder="https://example.com/game.nsp"
               required
               className="flex-1 bg-steam-bg-deep border border-steam-border text-steam-text rounded
                          px-3 py-2 text-sm placeholder-steam-dim focus:outline-none focus:border-steam-blue/50
                          transition-colors font-mono"
             />
             <select
-              value={platformSlug}
-              onChange={e => setPlatformSlug(e.target.value)}
+              value={extraType}
+              onChange={e => {
+                setExtraType(e.target.value as ExtraType | '')
+                setTargetGameId(null)
+                setTargetGameTitle('')
+                setGameSearch('')
+              }}
               className="bg-steam-bg-deep border border-steam-border text-steam-muted rounded
-                         px-3 py-2 text-xs focus:outline-none focus:border-steam-blue/50 w-44"
+                         px-3 py-2 text-xs focus:outline-none focus:border-steam-blue/50 w-40"
             >
-              <option value="">Auto-detect platform</option>
-              {platformOptions.map(p => (
-                <option key={p.slug} value={p.slug}>{p.name}</option>
+              {EXTRA_TYPE_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           </div>
 
+          {/* Platform selector — only for ROMs */}
+          {!isExtra && (
+            <select
+              value={platformSlug}
+              onChange={e => setPlatformSlug(e.target.value)}
+              className="w-full bg-steam-bg-deep border border-steam-border text-steam-muted rounded
+                         px-3 py-2 text-xs focus:outline-none focus:border-steam-blue/50"
+            >
+              <option value="">Auto-detect platform (recommended)</option>
+              {platformOptions.map(p => (
+                <option key={p.slug} value={p.slug}>{p.name}</option>
+              ))}
+            </select>
+          )}
+
+          {/* Game search — required for extras */}
+          {isExtra && (
+            <div className="relative">
+              <label className="block text-steam-dim text-xs mb-1">
+                Associate with game <span className="text-steam-danger">*</span>
+              </label>
+              {targetGameId ? (
+                <div className="flex items-center gap-2 bg-steam-bg-deep border border-steam-blue/40
+                                rounded px-3 py-2">
+                  <Package size={12} className="text-steam-blue flex-shrink-0" />
+                  <span className="text-steam-text text-sm flex-1 truncate">{targetGameTitle}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setTargetGameId(null); setTargetGameTitle(''); setGameSearch('') }}
+                    className="text-steam-dim hover:text-white text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={gameSearch}
+                    onChange={e => { setGameSearch(e.target.value); setShowGameDropdown(true) }}
+                    onFocus={() => setShowGameDropdown(true)}
+                    placeholder="Search your library for a game..."
+                    className="w-full bg-steam-bg-deep border border-steam-border text-steam-text rounded
+                               px-3 py-2 text-sm placeholder-steam-dim focus:outline-none focus:border-steam-blue/50"
+                  />
+                  {showGameDropdown && gameSearchResults && gameSearchResults.games.length > 0 && (
+                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-steam-surface
+                                    border border-steam-border rounded-lg shadow-card overflow-hidden">
+                      {gameSearchResults.games.map(g => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => {
+                            setTargetGameId(g.id)
+                            setTargetGameTitle(g.title)
+                            setGameSearch('')
+                            setShowGameDropdown(false)
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left
+                                     hover:bg-white/5 transition-colors"
+                        >
+                          {g.cover_url && (
+                            <img src={g.cover_url} alt="" className="w-6 h-8 object-cover rounded" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-steam-text text-xs truncate">{g.title}</p>
+                            <p className="text-steam-dim text-[10px]">{g.platform?.name}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={createMutation.isPending || !url.trim()}
+            disabled={createMutation.isPending || !url.trim() || (isExtra && !targetGameId)}
             className="flex items-center gap-2 bg-steam-blue hover:bg-blue-500 text-white
                        px-5 py-2 rounded text-sm font-medium disabled:opacity-50
                        active:scale-95 transition-all"
@@ -123,7 +236,7 @@ export default function DownloadsPage() {
             ) : (
               <Download size={14} />
             )}
-            Start Download
+            {isExtra ? `Download ${EXTRA_TYPE_OPTIONS.find(o => o.value === extraType)?.label}` : 'Download ROM'}
           </button>
 
           {createMutation.isError && (
@@ -161,7 +274,7 @@ export default function DownloadsPage() {
           <ArrowDown size={28} className="mx-auto text-steam-dim mb-3" />
           <p className="text-steam-muted text-sm">No downloads yet</p>
           <p className="text-steam-dim text-xs mt-1">
-            Paste a ROM download URL above to get started
+            Paste a ROM or extra file URL above to get started
           </p>
         </div>
       )}
@@ -181,6 +294,14 @@ function Section({ title, count, children }: {
       <div className="space-y-1.5">{children}</div>
     </div>
   )
+}
+
+const EXTRA_LABELS: Record<string, string> = {
+  update: 'Update',
+  dlc: 'DLC',
+  mod: 'Mod',
+  cheat: 'Cheat',
+  other: 'Extra',
 }
 
 function DownloadRow({ dl, onDelete }: { dl: DownloadType; onDelete: (id: number) => void }) {
@@ -216,7 +337,13 @@ function DownloadRow({ dl, onDelete }: { dl: DownloadType; onDelete: (id: number
           <p className="text-steam-text text-sm font-medium truncate">
             {dl.filename || new URL(dl.url).pathname.split('/').pop() || 'Unknown'}
           </p>
-          {dl.platform_slug && (
+          {dl.extra_type && (
+            <span className="text-[10px] text-purple-400 bg-purple-400/10 border border-purple-400/20
+                             px-1.5 py-0.5 rounded flex-shrink-0">
+              {EXTRA_LABELS[dl.extra_type] ?? dl.extra_type}
+            </span>
+          )}
+          {!dl.extra_type && dl.platform_slug && (
             <span className="text-[10px] text-steam-dim bg-steam-card px-1.5 py-0.5 rounded flex-shrink-0">
               {dl.platform_slug}
             </span>

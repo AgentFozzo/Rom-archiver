@@ -1,7 +1,7 @@
 import type {
   Platform, Game, GamesResponse, ScanStatus, DatFile,
   Settings, Stats, IGDBSearchResult, Download, PlatformOption,
-  BiosFile, BiosPlatformInfo
+  BiosFile, BiosPlatformInfo, GameExtra, ExtraType
 } from '../types'
 
 const BASE = '/api'
@@ -99,11 +99,16 @@ export const igdbSearch = (q: string, platform_igdb_id?: number) => {
 // Downloads (ROM Download Manager)
 export const getDownloads = () => request<Download[]>('/downloads')
 
-export const createDownload = (url: string, platform_slug?: string) =>
+export const createDownload = (
+  url: string,
+  platform_slug?: string,
+  extra_type?: ExtraType,
+  target_game_id?: number,
+) =>
   request<Download>('/downloads', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, platform_slug }),
+    body: JSON.stringify({ url, platform_slug, extra_type, target_game_id }),
   })
 
 export const deleteDownload = (id: number) =>
@@ -134,3 +139,26 @@ export const downloadBiosFile = (id: number) => {
 
 export const deleteBiosFile = (id: number) =>
   request<{ ok: boolean }>(`/bios/${id}`, { method: 'DELETE' })
+
+// Game Extras
+export const getGameExtras = (gameId: number) =>
+  request<GameExtra[]>(`/games/${gameId}/extras`)
+
+export const uploadGameExtras = (gameId: number, files: File[], extra_type: ExtraType) => {
+  const form = new FormData()
+  for (const file of files) form.append('files', file)
+  return request<GameExtra[]>(`/games/${gameId}/extras/upload?extra_type=${extra_type}`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+export const downloadGameExtra = (gameId: number, extraId: number) => {
+  window.location.href = `/api/games/${gameId}/extras/${extraId}/download`
+}
+
+export const deleteGameExtra = (gameId: number, extraId: number) =>
+  request<{ ok: boolean }>(`/games/${gameId}/extras/${extraId}`, { method: 'DELETE' })
+
+export const searchGamesForExtra = (search: string) =>
+  request<GamesResponse>(`/games?search=${encodeURIComponent(search)}&limit=10`)

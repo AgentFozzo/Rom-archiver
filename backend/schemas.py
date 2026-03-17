@@ -149,9 +149,24 @@ class BiosPlatformInfo(BaseModel):
     uploaded_count: int = 0
 
 
+class GameExtraOut(BaseModel):
+    id: int
+    game_id: int
+    filename: str
+    file_size: int = 0
+    extra_type: str
+    description: Optional[str] = None
+    uploaded_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 class DownloadCreate(BaseModel):
     url: str
     platform_slug: Optional[str] = None
+    extra_type: Optional[str] = None   # None = ROM; "mod"/"update"/"dlc"/"cheat"/"other"
+    target_game_id: Optional[int] = None  # For extras: associate with this game
 
 
 class DownloadOut(BaseModel):
@@ -165,6 +180,8 @@ class DownloadOut(BaseModel):
     speed_bps: int = 0
     platform_slug: Optional[str] = None
     game_id: Optional[int] = None
+    extra_type: Optional[str] = None
+    target_game_id: Optional[int] = None
     error: Optional[str] = None
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

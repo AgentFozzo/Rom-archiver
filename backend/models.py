@@ -50,6 +50,23 @@ class Game(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     platform = relationship("Platform", back_populates="games")
+    extras = relationship("GameExtra", back_populates="game", cascade="all, delete-orphan")
+
+
+class GameExtra(Base):
+    __tablename__ = "game_extras"
+
+    id = Column(Integer, primary_key=True, index=True)
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False, unique=True)
+    file_size = Column(BigInteger, default=0)
+    # mod, update, dlc, cheat, other
+    extra_type = Column(String, default="other", nullable=False)
+    description = Column(String, nullable=True)
+    uploaded_at = Column(DateTime, server_default=func.now())
+
+    game = relationship("Game", back_populates="extras")
 
 
 class DatFile(Base):
@@ -105,6 +122,10 @@ class Download(Base):
     speed_bps = Column(BigInteger, default=0)
     platform_slug = Column(String, nullable=True)  # user hint or auto-detected
     game_id = Column(Integer, ForeignKey("games.id"), nullable=True)
+    # extra_type: None = ROM, else "mod"/"update"/"dlc"/"cheat"/"other"
+    extra_type = Column(String, nullable=True)
+    # For extras: the game to associate this file with
+    target_game_id = Column(Integer, ForeignKey("games.id"), nullable=True)
     error = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)

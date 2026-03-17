@@ -57,13 +57,43 @@ def filename_from_headers(headers: dict) -> Optional[str]:
     return None
 
 
+# Archive/container formats that don't uniquely identify a platform
+_ARCHIVE_EXTS = {'.zip', '.7z', '.rar', '.gz', '.tar', '.bz2', '.lzma'}
+
+# Extensions that map to multiple platforms and can't be auto-detected
+_AMBIGUOUS_EXTS = {'.iso', '.bin', '.cue', '.img', '.pkg', '.pbp', '.chd', '.mdf'}
+
 def detect_platform_from_extension(filename: str) -> Optional[str]:
-    """Detect platform from file extension."""
+    """Detect platform from file extension, only for unambiguous extensions."""
+    from dat_parser import EXT_TO_PLATFORM
     ext = Path(filename).suffix.lower()
-    for slug, exts in ROM_EXTENSIONS.items():
-        if ext in exts:
-            return slug
+    if ext in _ARCHIVE_EXTS or ext in _AMBIGUOUS_EXTS:
+        return None
+    candidates = EXT_TO_PLATFORM.get(ext, [])
+    if len(candidates) == 1:
+        return candidates[0]
     return None
+
+
+# Extra type subfolder mapping
+EXTRA_SUBDIRS = {
+    "update": "updates",
+    "dlc": "dlc",
+    "mod": "mods",
+    "cheat": "cheats",
+    "other": "extras",
+}
+
+# Auto-detect extra type from extension
+_EXTRA_EXT_TYPES = {
+    '.ips': 'mod',
+    '.ups': 'mod',
+    '.bps': 'mod',
+    '.ppf': 'mod',
+    '.xdelta': 'mod',
+    '.pchtxt': 'cheat',
+    '.cht': 'cheat',
+}
 
 
 async def process_download(download_id: int, db_factory):
@@ -82,6 +112,7 @@ async def process_download(download_id: int, db_factory):
         rom_path_setting = rom_path_result.scalar_one_or_none()
         rom_path = (rom_path_setting.value if rom_path_setting else None) or "/roms"
 
+        temp_path = None
         try:
             # Phase 1: Download
             dl.status = "downloading"
@@ -111,7 +142,20 @@ async def process_download(download_id: int, db_factory):
             md5 = hashes.get("md5")
             sha1 = hashes.get("sha1")
 
-            # Phase 3: DAT lookup
+            # Phase 3: Move to correct folder
+            dl.status = "moving"
+            await db.commit()
+
+            # --- Extra file (mod/update/dlc/cheat) path ---
+            if dl.extra_type and dl.target_game_id:
+                await _process_extra_download(
+                    dl, temp_path, filename, rom_path,
+                    crc32, md5, sha1, db
+                )
+                return
+
+            # --- Regular ROM path ---
+            # DAT lookup
             dat_entry = await lookup_dat_entry(db, crc32, md5, sha1)
             dat_verified = dat_entry is not None
             dat_title = dat_entry["game_name"] if dat_entry else None
@@ -130,10 +174,6 @@ async def process_download(download_id: int, db_factory):
             if not platform_slug:
                 platform_slug = "other"
 
-            # Phase 4: Move to correct folder
-            dl.status = "moving"
-            await db.commit()
-
             platform_dir = os.path.join(rom_path, platform_slug)
             os.makedirs(platform_dir, exist_ok=True)
 
@@ -148,6 +188,7 @@ async def process_download(download_id: int, db_factory):
                     counter += 1
 
             os.rename(temp_path, final_path)
+            temp_path = None  # moved
             file_size = os.path.getsize(final_path)
             relative_path = os.path.relpath(final_path, rom_path)
 
@@ -164,8 +205,8 @@ async def process_download(download_id: int, db_factory):
             # Create platform
             platform = await get_or_create_platform(db, platform_slug, igdb_cid, igdb_csec)
 
-            # IGDB search
-            search_title = dat_title or clean_rom_name(filename)
+            # IGDB search — always strip () tags before searching
+            search_title = clean_rom_name(dat_title or filename)
             igdb_data = None
             if search_title and igdb_cid and igdb_csec:
                 try:
@@ -224,6 +265,12 @@ async def process_download(download_id: int, db_factory):
             dl.status = "error"
             dl.error = str(e)[:500]
             await db.commit()
+            # Clean up temp file on error
+            if temp_path and os.path.isfile(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
         finally:
             active_downloads.pop(download_id, None)
             # Clean up temp dir if empty
@@ -233,6 +280,62 @@ async def process_download(download_id: int, db_factory):
                     os.rmdir(temp_dir)
             except OSError:
                 pass
+
+
+async def _process_extra_download(
+    dl: models.Download,
+    temp_path: str,
+    filename: str,
+    rom_path: str,
+    crc32: Optional[str],
+    md5: Optional[str],
+    sha1: Optional[str],
+    db,
+):
+    """Move a downloaded file to the game's extras folder and register it."""
+    from sqlalchemy import select as sa_select
+
+    extra_type = dl.extra_type or "other"
+    subdir = EXTRA_SUBDIRS.get(extra_type, "extras")
+
+    # Auto-detect type from extension if not explicit
+    ext = Path(filename).suffix.lower()
+    if extra_type == "other" and ext in _EXTRA_EXT_TYPES:
+        extra_type = _EXTRA_EXT_TYPES[ext]
+        subdir = EXTRA_SUBDIRS.get(extra_type, "extras")
+
+    dest_dir = os.path.join(rom_path, ".game_extras", str(dl.target_game_id), subdir)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    final_path = os.path.join(dest_dir, filename)
+    if os.path.exists(final_path):
+        stem = Path(filename).stem
+        ext_str = Path(filename).suffix
+        counter = 1
+        while os.path.exists(final_path):
+            final_path = os.path.join(dest_dir, f"{stem} ({counter}){ext_str}")
+            counter += 1
+
+    os.rename(temp_path, final_path)
+    file_size = os.path.getsize(final_path)
+
+    extra = models.GameExtra(
+        game_id=dl.target_game_id,
+        filename=os.path.basename(final_path),
+        file_path=final_path,
+        file_size=file_size,
+        extra_type=extra_type,
+    )
+    db.add(extra)
+    await db.flush()
+
+    dl.game_id = dl.target_game_id
+    dl.filename = os.path.basename(final_path)
+    dl.status = "complete"
+    dl.progress = 100
+    dl.completed_at = datetime.utcnow()
+    await db.commit()
+    logger.info(f"Extra download {dl.id} complete: {filename} -> {final_path}")
 
 
 async def download_file(dl: models.Download, dest_path: str, db: AsyncSession):

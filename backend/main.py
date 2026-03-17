@@ -19,7 +19,7 @@ import igdb as igdb_client
 from database import get_db, init_db
 from scanner import scan_library, get_scan_status, fetch_igdb_metadata, process_rom_file
 from dat_parser import DatParser, PLATFORM_DISPLAY_NAMES
-from downloader import process_download, active_downloads
+from downloader import process_download, active_downloads, EXTRA_SUBDIRS
 from bios_db import lookup_bios_by_md5, lookup_bios_by_filename, PLATFORM_BIOS_INFO
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -711,6 +711,8 @@ async def create_download(
     dl = models.Download(
         url=body.url,
         platform_slug=body.platform_slug,
+        extra_type=body.extra_type or None,
+        target_game_id=body.target_game_id or None,
         status="pending",
     )
     db.add(dl)
@@ -730,6 +732,35 @@ async def delete_download(download_id: int, db: AsyncSession = Depends(get_db)):
     dl = result.scalar_one_or_none()
     if not dl:
         raise HTTPException(404, "Download not found")
+
+    # Clean up any leftover temp file
+    rom_path_result = await db.execute(
+        select(models.Setting).where(models.Setting.key == "rom_path")
+    )
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+    temp_dir = os.path.join(rom_path, ".tmp_downloads")
+    if dl.filename:
+        temp_file = os.path.join(temp_dir, f"{dl.id}_{dl.filename}")
+        if os.path.isfile(temp_file):
+            try:
+                os.remove(temp_file)
+            except OSError:
+                pass
+    # Also try glob pattern in case filename changed mid-download
+    if os.path.isdir(temp_dir):
+        for fname in os.listdir(temp_dir):
+            if fname.startswith(f"{dl.id}_"):
+                try:
+                    os.remove(os.path.join(temp_dir, fname))
+                except OSError:
+                    pass
+        try:
+            if not os.listdir(temp_dir):
+                os.rmdir(temp_dir)
+        except OSError:
+            pass
+
     await db.delete(dl)
     await db.commit()
     return {"ok": True}
@@ -739,6 +770,120 @@ async def delete_download(download_id: int, db: AsyncSession = Depends(get_db)):
 async def get_platform_options():
     """Return available platform slugs for the download form."""
     return [{"slug": k, "name": v} for k, v in PLATFORM_DISPLAY_NAMES.items()]
+
+
+# ─── Game Extras ───────────────────────────────────────────────────────────────
+
+@app.get("/api/games/{game_id}/extras", response_model=List[schemas.GameExtraOut])
+async def list_game_extras(game_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.GameExtra)
+        .where(models.GameExtra.game_id == game_id)
+        .order_by(models.GameExtra.extra_type, models.GameExtra.filename)
+    )
+    return result.scalars().all()
+
+
+@app.post("/api/games/{game_id}/extras/upload", response_model=List[schemas.GameExtraOut])
+async def upload_game_extras(
+    game_id: int,
+    files: List[UploadFile] = File(...),
+    extra_type: str = Query("other"),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(models.Game).where(models.Game.id == game_id))
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(404, "Game not found")
+
+    rom_path_result = await db.execute(
+        select(models.Setting).where(models.Setting.key == "rom_path")
+    )
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+
+    valid_types = {"mod", "update", "dlc", "cheat", "other"}
+    if extra_type not in valid_types:
+        extra_type = "other"
+
+    subdir = EXTRA_SUBDIRS.get(extra_type, "extras")
+    dest_dir = os.path.join(rom_path, ".game_extras", str(game_id), subdir)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    uploaded = []
+    for file in files:
+        if not file.filename:
+            continue
+        final_path = os.path.join(dest_dir, file.filename)
+        # Avoid overwriting
+        if os.path.exists(final_path):
+            stem = Path(file.filename).stem
+            ext = Path(file.filename).suffix
+            counter = 1
+            while os.path.exists(final_path):
+                final_path = os.path.join(dest_dir, f"{stem} ({counter}){ext}")
+                counter += 1
+        try:
+            with open(final_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            file_size = os.path.getsize(final_path)
+            extra = models.GameExtra(
+                game_id=game_id,
+                filename=os.path.basename(final_path),
+                file_path=final_path,
+                file_size=file_size,
+                extra_type=extra_type,
+            )
+            db.add(extra)
+            await db.flush()
+            uploaded.append(extra)
+        except Exception as e:
+            logger.error(f"Failed to upload extra for game {game_id}: {e}")
+            if os.path.isfile(final_path):
+                os.remove(final_path)
+
+    await db.commit()
+    for ex in uploaded:
+        await db.refresh(ex)
+    return uploaded
+
+
+@app.get("/api/games/{game_id}/extras/{extra_id}/download")
+async def download_game_extra(game_id: int, extra_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.GameExtra).where(
+            models.GameExtra.id == extra_id,
+            models.GameExtra.game_id == game_id,
+        )
+    )
+    extra = result.scalar_one_or_none()
+    if not extra:
+        raise HTTPException(404, "Extra file not found")
+    if not os.path.isfile(extra.file_path):
+        raise HTTPException(404, "File not found on disk")
+    return FileResponse(
+        path=extra.file_path,
+        filename=extra.filename,
+        media_type="application/octet-stream",
+    )
+
+
+@app.delete("/api/games/{game_id}/extras/{extra_id}")
+async def delete_game_extra(game_id: int, extra_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.GameExtra).where(
+            models.GameExtra.id == extra_id,
+            models.GameExtra.game_id == game_id,
+        )
+    )
+    extra = result.scalar_one_or_none()
+    if not extra:
+        raise HTTPException(404, "Extra file not found")
+    if os.path.isfile(extra.file_path):
+        os.remove(extra.file_path)
+    await db.delete(extra)
+    await db.commit()
+    return {"ok": True}
 
 
 # ─── Stats ─────────────────────────────────────────────────────────────────────

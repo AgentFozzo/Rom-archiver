@@ -1,15 +1,17 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  getGame, downloadGameFile, refreshGameMetadata, deleteGame, igdbSearch
+  getGame, downloadGameFile, refreshGameMetadata, deleteGame, igdbSearch,
+  getGameExtras, uploadGameExtras, downloadGameExtra, deleteGameExtra,
 } from '../api/client'
 import {
   Download, RefreshCw, Trash2, Star, Calendar, HardDrive,
-  ShieldCheck, ArrowLeft, ChevronLeft, ChevronRight, X, Edit3
+  ShieldCheck, ArrowLeft, ChevronLeft, ChevronRight, X, Edit3,
+  Upload, Package, FileText, Zap, Puzzle, FolderOpen,
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { IGDBSearchResult } from '../types'
+import type { IGDBSearchResult, ExtraType } from '../types'
 
 function formatBytes(bytes: number): string {
   const k = 1024
@@ -337,6 +339,11 @@ export default function GameDetailPage() {
         </div>
       </div>
 
+      {/* Game Files / Extras section */}
+      <div className="px-6 pb-8 max-w-5xl">
+        <GameExtrasPanel gameId={id} platformSlug={game.platform?.slug} />
+      </div>
+
       {/* IGDB Match Modal */}
       {showMatchModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -407,6 +414,165 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
     <div>
       <span className="text-steam-dim text-[10px] uppercase tracking-wider">{label}</span>
       <p className={clsx('text-steam-text text-xs break-all mt-0.5', mono && 'font-mono')}>{value}</p>
+    </div>
+  )
+}
+
+// ── Extras panel ────────────────────────────────────────────────────────────
+
+const EXTRA_TABS: { type: ExtraType; label: string; icon: React.ReactNode }[] = [
+  { type: 'update',  label: 'Updates', icon: <Package size={13} /> },
+  { type: 'dlc',     label: 'DLC',     icon: <Puzzle size={13} /> },
+  { type: 'mod',     label: 'Mods',    icon: <Zap size={13} /> },
+  { type: 'cheat',   label: 'Cheats',  icon: <FileText size={13} /> },
+  { type: 'other',   label: 'Other',   icon: <FolderOpen size={13} /> },
+]
+
+function GameExtrasPanel({ gameId, platformSlug }: { gameId: number; platformSlug?: string }) {
+  const [activeTab, setActiveTab] = useState<ExtraType>('update')
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const qc = useQueryClient()
+
+  const { data: extras = [] } = useQuery({
+    queryKey: ['game-extras', gameId],
+    queryFn: () => getGameExtras(gameId),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (extraId: number) => deleteGameExtra(gameId, extraId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['game-extras', gameId] }),
+  })
+
+  const handleUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploading(true)
+    try {
+      await uploadGameExtras(gameId, Array.from(files), activeTab)
+      qc.invalidateQueries({ queryKey: ['game-extras', gameId] })
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const tabExtras = extras.filter(e => e.extra_type === activeTab)
+  const totalCount = extras.length
+
+  return (
+    <div className="bg-steam-card border border-steam-border rounded-lg overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-steam-border">
+        <h3 className="text-steam-text text-sm font-semibold flex items-center gap-2">
+          <FolderOpen size={14} className="text-steam-blue" />
+          Game Files
+          {totalCount > 0 && (
+            <span className="text-steam-dim text-xs font-normal">({totalCount})</span>
+          )}
+        </h3>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-steam-border">
+        {EXTRA_TABS.map(tab => {
+          const count = extras.filter(e => e.extra_type === tab.type).length
+          return (
+            <button
+              key={tab.type}
+              onClick={() => setActiveTab(tab.type)}
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px',
+                activeTab === tab.type
+                  ? 'text-white border-steam-blue'
+                  : 'text-steam-muted hover:text-steam-text border-transparent'
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+              {count > 0 && (
+                <span className={clsx(
+                  'text-[10px] px-1 rounded',
+                  activeTab === tab.type ? 'bg-steam-blue/20 text-steam-blue' : 'bg-steam-surface text-steam-dim'
+                )}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Content */}
+      <div className="p-4">
+        {/* Upload button */}
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={e => handleUpload(e.target.files)}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1.5 bg-steam-bg-deep border border-steam-border
+                       text-steam-muted hover:text-white px-3 py-1.5 rounded text-xs
+                       transition-colors disabled:opacity-50"
+          >
+            <Upload size={12} />
+            {uploading ? 'Uploading...' : `Upload ${EXTRA_TABS.find(t => t.type === activeTab)?.label}`}
+          </button>
+          <span className="text-steam-dim text-[10px]">
+            Files are organized into <code className="text-steam-blue">.game_extras/{gameId}/{activeTab}s/</code>
+          </span>
+        </div>
+
+        {/* File list */}
+        {tabExtras.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="text-steam-dim text-xs">
+              No {EXTRA_TABS.find(t => t.type === activeTab)?.label.toLowerCase()} uploaded yet
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {tabExtras.map(extra => (
+              <div
+                key={extra.id}
+                className="flex items-center gap-3 px-3 py-2 bg-steam-bg-deep rounded border
+                           border-steam-border/50 group"
+              >
+                <span className="text-steam-dim text-xs flex-shrink-0">
+                  {EXTRA_TABS.find(t => t.type === extra.extra_type)?.icon}
+                </span>
+                <span className="text-steam-text text-xs truncate flex-1">{extra.filename}</span>
+                <span className="text-steam-dim text-[10px] flex-shrink-0">
+                  {formatBytes(extra.file_size)}
+                </span>
+                <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => downloadGameExtra(gameId, extra.id)}
+                    className="text-steam-muted hover:text-steam-blue transition-colors p-1"
+                    title="Download"
+                  >
+                    <Download size={12} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete "${extra.filename}"?`)) deleteMutation.mutate(extra.id)
+                    }}
+                    className="text-steam-muted hover:text-steam-danger transition-colors p-1"
+                    title="Delete"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -84,6 +84,18 @@ export interface IGDBSearchResult {
   genres?: string[]
 }
 
+export type ExtraType = 'mod' | 'update' | 'dlc' | 'cheat' | 'other'
+
+export interface GameExtra {
+  id: number
+  game_id: number
+  filename: string
+  file_size: number
+  extra_type: ExtraType
+  description?: string
+  uploaded_at?: string
+}
+
 export interface Download {
   id: number
   url: string
@@ -95,6 +107,8 @@ export interface Download {
   speed_bps: number
   platform_slug?: string
   game_id?: number
+  extra_type?: ExtraType
+  target_game_id?: number
   error?: string
   created_at?: string
   completed_at?: string
