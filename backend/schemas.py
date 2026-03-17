@@ -162,6 +162,42 @@ class GameExtraOut(BaseModel):
         from_attributes = True
 
 
+class ReorganizeDetail(BaseModel):
+    game_id: int
+    title: str
+    old_platform: str
+    new_platform: str
+
+
+class ReorganizeStatus(BaseModel):
+    running: bool
+    progress: int
+    total: int
+    moved: int
+    skipped: int
+    errors: int
+    details: List[ReorganizeDetail] = []
+
+
+class PlatformReassign(BaseModel):
+    platform_slug: str
+
+
+class TempCleanupResult(BaseModel):
+    deleted: int
+    freed_bytes: int
+
+
+class IntegrityResult(BaseModel):
+    missing: List[GameOut]
+    total_checked: int
+
+
+class DuplicateGroup(BaseModel):
+    crc32: Optional[str]
+    games: List[GameOut]
+
+
 class DownloadCreate(BaseModel):
     url: str
     platform_slug: Optional[str] = None

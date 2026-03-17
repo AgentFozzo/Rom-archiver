@@ -1,13 +1,27 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getSettings, updateSettings, getDats, importDats, deleteDat, startScan, getScanStatus } from '../api/client'
+import {
+  getSettings, updateSettings, getDats, importDats, deleteDat,
+  startScan, getScanStatus,
+  startReorganize, getReorganizeStatus,
+  getLibraryIntegrity, removeMissingGames,
+  getLibraryDuplicates, cleanupTempDownloads,
+} from '../api/client'
 import type { Settings } from '../types'
 import {
   Save, Upload, Trash2, RefreshCw, CheckCircle, AlertCircle,
-  Eye, EyeOff, Loader2, ExternalLink, Database, ArrowLeft, FileCheck
+  Eye, EyeOff, Loader2, ExternalLink, Database, ArrowLeft, FileCheck,
+  FolderSync, ShieldAlert, Copy, Folder, Wrench, Link2,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return '0 B'
+  const k = 1024, s = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${s[i]}`
+}
 
 export default function SettingsPage() {
   const qc = useQueryClient()
@@ -304,6 +318,9 @@ export default function SettingsPage() {
         )}
       </Section>
 
+      {/* Library Tools */}
+      <LibraryToolsSection />
+
       {/* Save */}
       <div className="flex items-center justify-between pt-2 pb-4">
         {saveMsg && (
@@ -361,5 +378,288 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
         checked ? 'translate-x-4' : 'translate-x-0.5'
       )} />
     </button>
+  )
+}
+
+// ── Library Tools ────────────────────────────────────────────────────────────
+
+function LibraryToolsSection() {
+  const qc = useQueryClient()
+
+  // ── Reorganize ──
+  const [reorgDone, setReorgDone] = useState(false)
+  const { data: reorgStatus, refetch: refetchReorg } = useQuery({
+    queryKey: ['reorganize-status'],
+    queryFn: getReorganizeStatus,
+    refetchInterval: (q) => q.state.data?.running ? 1200 : false,
+  })
+
+  const startReorgMutation = useMutation({
+    mutationFn: startReorganize,
+    onSuccess: () => {
+      setReorgDone(false)
+      refetchReorg()
+    },
+  })
+
+  useEffect(() => {
+    if (reorgStatus && !reorgStatus.running && reorgStatus.total > 0) {
+      setReorgDone(true)
+      qc.invalidateQueries({ queryKey: ['games'] })
+      qc.invalidateQueries({ queryKey: ['platforms'] })
+    }
+  }, [reorgStatus?.running])
+
+  // ── Temp cleanup ──
+  const [tempResult, setTempResult] = useState<{ deleted: number; freed_bytes: number } | null>(null)
+  const tempMutation = useMutation({
+    mutationFn: cleanupTempDownloads,
+    onSuccess: (r) => setTempResult(r),
+  })
+
+  // ── Integrity ──
+  const [integrityResult, setIntegrityResult] = useState<
+    { missing: import('../types').Game[]; total_checked: number } | null
+  >(null)
+  const integrityMutation = useMutation({
+    mutationFn: getLibraryIntegrity,
+    onSuccess: (r) => setIntegrityResult(r),
+  })
+  const removeMissingMutation = useMutation({
+    mutationFn: removeMissingGames,
+    onSuccess: () => {
+      setIntegrityResult(null)
+      qc.invalidateQueries({ queryKey: ['games'] })
+    },
+  })
+
+  // ── Duplicates ──
+  const [dupResult, setDupResult] = useState<
+    { crc32: string; games: import('../types').Game[] }[] | null
+  >(null)
+  const dupMutation = useMutation({
+    mutationFn: getLibraryDuplicates,
+    onSuccess: (r) => setDupResult(r),
+  })
+
+  const isReorging = reorgStatus?.running ?? false
+
+  return (
+    <Section title="Library Tools">
+      <p className="text-steam-dim text-xs -mt-1 mb-1">
+        Maintenance utilities for your ROM collection.
+      </p>
+
+      {/* Re-organize */}
+      <div className="space-y-2">
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-steam-text text-xs font-medium flex items-center gap-1.5">
+              <FolderSync size={12} className="text-steam-blue" /> Re-organize Library
+            </p>
+            <p className="text-steam-dim text-[10px] mt-0.5">
+              Inspects ZIP contents and folder names to move mis-categorized ROMs to the correct
+              platform folder automatically.
+            </p>
+          </div>
+          <button
+            onClick={() => startReorgMutation.mutate()}
+            disabled={isReorging}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-steam-blue text-white px-3 py-1.5
+                       rounded text-xs font-medium hover:bg-blue-500 disabled:opacity-50
+                       transition-all active:scale-95"
+          >
+            <FolderSync size={11} className={clsx(isReorging && 'animate-spin')} />
+            {isReorging ? 'Running...' : 'Run'}
+          </button>
+        </div>
+
+        {/* Progress */}
+        {(isReorging || reorgDone) && reorgStatus && reorgStatus.total > 0 && (
+          <div className="bg-steam-bg-deep border border-steam-border rounded-lg p-3 space-y-2 animate-fade-in">
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className={clsx(
+                  'font-medium flex items-center gap-1',
+                  isReorging ? 'text-steam-blue' : 'text-steam-verified'
+                )}>
+                  {isReorging ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle size={11} />}
+                  {isReorging ? `Checking files... ${reorgStatus.progress}/${reorgStatus.total}` : 'Done'}
+                </span>
+                <span className="text-steam-dim">
+                  {reorgStatus.moved} moved · {reorgStatus.skipped} ok · {reorgStatus.errors} errors
+                </span>
+              </div>
+              <div className="h-1.5 bg-steam-border rounded-full overflow-hidden">
+                <div
+                  className={clsx('h-full rounded-full transition-all',
+                    isReorging ? 'bg-steam-blue' : 'bg-steam-verified'
+                  )}
+                  style={{ width: `${reorgStatus.total ? Math.round((reorgStatus.progress / reorgStatus.total) * 100) : 0}%` }}
+                />
+              </div>
+            </div>
+            {reorgStatus.details.length > 0 && (
+              <div className="max-h-28 overflow-y-auto space-y-0.5">
+                {reorgStatus.details.map(d => (
+                  <div key={d.game_id} className="flex items-center gap-1.5 text-[10px] text-steam-muted">
+                    <Link2 size={9} className="text-steam-blue flex-shrink-0" />
+                    <span className="truncate flex-1">{d.title}</span>
+                    <span className="text-steam-dim flex-shrink-0">
+                      {d.old_platform} → {d.new_platform}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-steam-border/50 pt-3 space-y-2">
+        {/* Temp cleanup */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-steam-text text-xs font-medium flex items-center gap-1.5">
+              <Folder size={12} className="text-yellow-400" /> Clear Temp Downloads
+            </p>
+            <p className="text-steam-dim text-[10px]">
+              Delete leftover files in <code>.tmp_downloads/</code>.
+              {tempResult && (
+                <span className="text-steam-verified ml-1">
+                  Deleted {tempResult.deleted} file{tempResult.deleted !== 1 ? 's' : ''}, freed {formatBytes(tempResult.freed_bytes)}.
+                </span>
+              )}
+            </p>
+          </div>
+          <button
+            onClick={() => { setTempResult(null); tempMutation.mutate() }}
+            disabled={tempMutation.isPending}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-steam-bg-deep border border-steam-border
+                       text-steam-muted hover:text-white px-3 py-1.5 rounded text-xs transition-colors
+                       disabled:opacity-50"
+          >
+            {tempMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-steam-border/50 pt-3 space-y-2">
+        {/* Integrity check */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-steam-text text-xs font-medium flex items-center gap-1.5">
+              <ShieldAlert size={12} className="text-orange-400" /> Integrity Check
+            </p>
+            <p className="text-steam-dim text-[10px]">
+              Find games in the database whose ROM files no longer exist on disk.
+            </p>
+          </div>
+          <button
+            onClick={() => { setIntegrityResult(null); integrityMutation.mutate() }}
+            disabled={integrityMutation.isPending}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-steam-bg-deep border border-steam-border
+                       text-steam-muted hover:text-white px-3 py-1.5 rounded text-xs transition-colors
+                       disabled:opacity-50"
+          >
+            {integrityMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <ShieldAlert size={11} />}
+            Check
+          </button>
+        </div>
+
+        {integrityResult && (
+          <div className="bg-steam-bg-deep border border-steam-border rounded-lg p-3 animate-fade-in">
+            {integrityResult.missing.length === 0 ? (
+              <p className="text-steam-verified text-xs flex items-center gap-1.5">
+                <CheckCircle size={11} /> All {integrityResult.total_checked} files are present on disk.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-steam-danger text-xs font-medium flex items-center gap-1.5">
+                    <AlertCircle size={11} />
+                    {integrityResult.missing.length} missing file{integrityResult.missing.length !== 1 ? 's' : ''}
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Remove ${integrityResult.missing.length} missing game record(s) from the database?`))
+                        removeMissingMutation.mutate()
+                    }}
+                    disabled={removeMissingMutation.isPending}
+                    className="text-steam-danger text-[10px] hover:underline disabled:opacity-50"
+                  >
+                    Remove from DB
+                  </button>
+                </div>
+                <div className="max-h-28 overflow-y-auto space-y-0.5">
+                  {integrityResult.missing.map(g => (
+                    <div key={g.id} className="text-[10px] text-steam-muted flex items-center gap-1.5">
+                      <AlertCircle size={9} className="text-steam-danger flex-shrink-0" />
+                      <span className="truncate">{g.title}</span>
+                      <span className="text-steam-dim flex-shrink-0 font-mono">{g.file_name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-steam-border/50 pt-3 space-y-2">
+        {/* Duplicate finder */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-steam-text text-xs font-medium flex items-center gap-1.5">
+              <Copy size={12} className="text-purple-400" /> Find Duplicates
+            </p>
+            <p className="text-steam-dim text-[10px]">
+              Detect games with identical CRC32 hashes (exact file copies).
+            </p>
+          </div>
+          <button
+            onClick={() => { setDupResult(null); dupMutation.mutate() }}
+            disabled={dupMutation.isPending}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-steam-bg-deep border border-steam-border
+                       text-steam-muted hover:text-white px-3 py-1.5 rounded text-xs transition-colors
+                       disabled:opacity-50"
+          >
+            {dupMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <Copy size={11} />}
+            Scan
+          </button>
+        </div>
+
+        {dupResult && (
+          <div className="bg-steam-bg-deep border border-steam-border rounded-lg p-3 animate-fade-in">
+            {dupResult.length === 0 ? (
+              <p className="text-steam-verified text-xs flex items-center gap-1.5">
+                <CheckCircle size={11} /> No duplicate files found.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-yellow-400 text-xs font-medium">
+                  {dupResult.length} duplicate group{dupResult.length !== 1 ? 's' : ''} found
+                </p>
+                <div className="max-h-36 overflow-y-auto space-y-2">
+                  {dupResult.map(group => (
+                    <div key={group.crc32} className="space-y-0.5">
+                      <p className="text-steam-dim text-[10px] font-mono">CRC32: {group.crc32}</p>
+                      {group.games.map(g => (
+                        <div key={g.id} className="flex items-center gap-1.5 text-[10px] text-steam-muted pl-2">
+                          <Copy size={9} className="text-purple-400 flex-shrink-0" />
+                          <span className="truncate flex-1">{g.title}</span>
+                          <span className="text-steam-dim flex-shrink-0">{g.platform?.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Section>
   )
 }

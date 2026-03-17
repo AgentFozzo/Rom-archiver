@@ -17,7 +17,11 @@ import models
 import schemas
 import igdb as igdb_client
 from database import get_db, init_db
-from scanner import scan_library, get_scan_status, fetch_igdb_metadata, process_rom_file
+from scanner import (
+    scan_library, get_scan_status, fetch_igdb_metadata, process_rom_file,
+    reorganize_library, get_reorganize_status,
+    check_library_integrity, find_duplicate_games,
+)
 from dat_parser import DatParser, PLATFORM_DISPLAY_NAMES
 from downloader import process_download, active_downloads, EXTRA_SUBDIRS
 from bios_db import lookup_bios_by_md5, lookup_bios_by_filename, PLATFORM_BIOS_INFO
@@ -298,6 +302,67 @@ async def delete_game(game_id: int, db: AsyncSession = Depends(get_db)):
     return {"ok": True}
 
 
+@app.post("/api/games/{game_id}/reassign-platform", response_model=schemas.GameOut)
+async def reassign_game_platform(
+    game_id: int,
+    body: schemas.PlatformReassign,
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a game file to a different platform folder and update the DB."""
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(models.Game)
+        .options(selectinload(models.Game.platform))
+        .where(models.Game.id == game_id)
+    )
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(404, "Game not found")
+
+    new_slug = body.platform_slug.strip().lower()
+    if not new_slug:
+        raise HTTPException(400, "platform_slug required")
+
+    rom_path_result = await db.execute(
+        select(models.Setting).where(models.Setting.key == "rom_path")
+    )
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+
+    old_full_path = os.path.join(rom_path, game.file_path)
+    cid, csec = await get_igdb_creds(db)
+    from scanner import get_or_create_platform
+    platform = await get_or_create_platform(db, new_slug, cid, csec)
+
+    dest_dir = os.path.join(rom_path, new_slug)
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, game.file_name)
+
+    if os.path.exists(dest_path) and dest_path != old_full_path:
+        stem = Path(game.file_name).stem
+        ext = Path(game.file_name).suffix
+        counter = 1
+        while os.path.exists(dest_path):
+            dest_path = os.path.join(dest_dir, f"{stem} ({counter}){ext}")
+            counter += 1
+
+    if os.path.isfile(old_full_path):
+        os.rename(old_full_path, dest_path)
+
+    game.file_path = os.path.relpath(dest_path, rom_path)
+    game.file_name = os.path.basename(dest_path)
+    game.platform_id = platform.id
+    await db.commit()
+
+    result2 = await db.execute(
+        select(models.Game)
+        .options(selectinload(models.Game.platform))
+        .where(models.Game.id == game_id)
+    )
+    game = result2.scalar_one_or_none()
+    return _serialize_game(game)
+
+
 @app.get("/api/games/{game_id}/download")
 async def download_game(game_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(models.Game).where(models.Game.id == game_id))
@@ -394,6 +459,94 @@ async def start_scan(background_tasks: BackgroundTasks, db: AsyncSession = Depen
 @app.get("/api/scan/status", response_model=schemas.ScanStatus)
 async def scan_status():
     return get_scan_status()
+
+
+# ─── Library Tools ─────────────────────────────────────────────────────────────
+
+@app.post("/api/library/reorganize")
+async def start_reorganize(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    status = get_reorganize_status()
+    if status["running"]:
+        raise HTTPException(409, "Reorganize already running")
+
+    rom_path_result = await db.execute(select(models.Setting).where(models.Setting.key == "rom_path"))
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+    cid, csec = await get_igdb_creds(db)
+
+    async def _run():
+        from database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await reorganize_library(session, rom_path, cid, csec)
+
+    background_tasks.add_task(_run)
+    return {"message": "Reorganize started"}
+
+
+@app.get("/api/library/reorganize/status", response_model=schemas.ReorganizeStatus)
+async def reorganize_status():
+    return get_reorganize_status()
+
+
+@app.get("/api/library/integrity", response_model=schemas.IntegrityResult)
+async def library_integrity(db: AsyncSession = Depends(get_db)):
+    rom_path_result = await db.execute(select(models.Setting).where(models.Setting.key == "rom_path"))
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+    result = await check_library_integrity(db, rom_path)
+    return {
+        "missing": [_serialize_game(g) for g in result["missing"]],
+        "total_checked": result["total_checked"],
+    }
+
+
+@app.delete("/api/library/integrity/missing")
+async def remove_missing_games(db: AsyncSession = Depends(get_db)):
+    """Remove DB entries for ROM files that no longer exist on disk."""
+    rom_path_result = await db.execute(select(models.Setting).where(models.Setting.key == "rom_path"))
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+    result = await check_library_integrity(db, rom_path)
+    count = 0
+    for game in result["missing"]:
+        await db.delete(game)
+        count += 1
+    await db.commit()
+    return {"removed": count}
+
+
+@app.get("/api/library/duplicates")
+async def library_duplicates(db: AsyncSession = Depends(get_db)):
+    groups = await find_duplicate_games(db)
+    return [
+        {"crc32": g["crc32"], "games": [_serialize_game(game) for game in g["games"]]}
+        for g in groups
+    ]
+
+
+@app.delete("/api/downloads/temp-cleanup", response_model=schemas.TempCleanupResult)
+async def cleanup_temp_downloads(db: AsyncSession = Depends(get_db)):
+    rom_path_result = await db.execute(select(models.Setting).where(models.Setting.key == "rom_path"))
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+    temp_dir = os.path.join(rom_path, ".tmp_downloads")
+    deleted = 0
+    freed_bytes = 0
+    if os.path.isdir(temp_dir):
+        for fname in os.listdir(temp_dir):
+            fpath = os.path.join(temp_dir, fname)
+            if os.path.isfile(fpath):
+                try:
+                    freed_bytes += os.path.getsize(fpath)
+                    os.remove(fpath)
+                    deleted += 1
+                except OSError:
+                    pass
+        try:
+            os.rmdir(temp_dir)
+        except OSError:
+            pass
+    return {"deleted": deleted, "freed_bytes": freed_bytes}
 
 
 # ─── BIOS / System Files ──────────────────────────────────────────────────────

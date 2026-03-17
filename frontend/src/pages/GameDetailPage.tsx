@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getGame, downloadGameFile, refreshGameMetadata, deleteGame, igdbSearch,
   getGameExtras, uploadGameExtras, downloadGameExtra, deleteGameExtra,
+  reassignGamePlatform, getPlatformOptions,
 } from '../api/client'
 import {
   Download, RefreshCw, Trash2, Star, Calendar, HardDrive,
@@ -37,6 +38,7 @@ export default function GameDetailPage() {
   const [matchSearch, setMatchSearch] = useState('')
   const [matchResults, setMatchResults] = useState<IGDBSearchResult[]>([])
   const [matchLoading, setMatchLoading] = useState(false)
+  const [showMoveModal, setShowMoveModal] = useState(false)
 
   const { data: game, isLoading } = useQuery({
     queryKey: ['game', id],
@@ -178,7 +180,7 @@ export default function GameDetailPage() {
                   Download ROM
                 </button>
 
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     onClick={() => {
                       setMatchSearch(game.dat_title || game.title)
@@ -189,6 +191,15 @@ export default function GameDetailPage() {
                                py-1.5 rounded text-xs transition-colors"
                   >
                     <Edit3 size={11} /> Match
+                  </button>
+                  <button
+                    onClick={() => setShowMoveModal(true)}
+                    className="flex items-center justify-center gap-1 bg-steam-bg-deep border
+                               border-steam-border text-steam-muted hover:text-white
+                               py-1.5 rounded text-xs transition-colors"
+                    title="Move to different platform"
+                  >
+                    <HardDrive size={11} /> Move
                   </button>
                   <button
                     onClick={() => refreshMutation.mutate()}
@@ -344,6 +355,20 @@ export default function GameDetailPage() {
         <GameExtrasPanel gameId={id} platformSlug={game.platform?.slug} />
       </div>
 
+      {/* Move Platform Modal */}
+      {showMoveModal && (
+        <MovePlatformModal
+          game={game}
+          onClose={() => setShowMoveModal(false)}
+          onSuccess={() => {
+            setShowMoveModal(false)
+            qc.invalidateQueries({ queryKey: ['game', id] })
+            qc.invalidateQueries({ queryKey: ['games'] })
+            qc.invalidateQueries({ queryKey: ['platforms'] })
+          }}
+        />
+      )}
+
       {/* IGDB Match Modal */}
       {showMatchModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -414,6 +439,97 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
     <div>
       <span className="text-steam-dim text-[10px] uppercase tracking-wider">{label}</span>
       <p className={clsx('text-steam-text text-xs break-all mt-0.5', mono && 'font-mono')}>{value}</p>
+    </div>
+  )
+}
+
+// ── Move Platform Modal ──────────────────────────────────────────────────────
+
+function MovePlatformModal({
+  game,
+  onClose,
+  onSuccess,
+}: {
+  game: import('../types').Game
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [selected, setSelected] = useState(game.platform?.slug ?? '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const { data: platformOptions = [] } = useQuery({
+    queryKey: ['platform-options'],
+    queryFn: getPlatformOptions,
+  })
+
+  const handleMove = async () => {
+    if (!selected || selected === game.platform?.slug) return
+    setLoading(true)
+    setError('')
+    try {
+      await reassignGamePlatform(game.id, selected)
+      onSuccess()
+    } catch (e: unknown) {
+      setError((e as Error).message || 'Failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+         onClick={onClose}>
+      <div className="bg-steam-surface border border-steam-border rounded-xl w-full max-w-sm shadow-card
+                      animate-slide-up"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-steam-border">
+          <h3 className="text-white text-sm font-semibold flex items-center gap-2">
+            <HardDrive size={14} className="text-steam-blue" />
+            Move to Platform
+          </h3>
+          <button onClick={onClose} className="text-steam-muted hover:text-white"><X size={16} /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <p className="text-steam-dim text-xs mb-1">
+              Current: <span className="text-steam-text">{game.platform?.name ?? 'Unknown'}</span>
+            </p>
+            <p className="text-steam-dim text-xs mb-2">
+              Moves the file to a different platform folder and updates the library.
+            </p>
+          </div>
+          <select
+            value={selected}
+            onChange={e => setSelected(e.target.value)}
+            className="w-full bg-steam-bg-deep border border-steam-border text-steam-text rounded
+                       px-3 py-2 text-sm focus:outline-none focus:border-steam-blue/50"
+          >
+            <option value="">Select platform...</option>
+            {platformOptions.map(p => (
+              <option key={p.slug} value={p.slug}>{p.name}</option>
+            ))}
+          </select>
+          {error && <p className="text-steam-danger text-xs">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              className="flex-1 bg-steam-bg-deep border border-steam-border text-steam-muted
+                         hover:text-white py-2 rounded text-xs transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleMove}
+              disabled={loading || !selected || selected === game.platform?.slug}
+              className="flex-1 bg-steam-blue text-white py-2 rounded text-xs font-medium
+                         hover:bg-blue-500 disabled:opacity-50 transition-all"
+            >
+              {loading ? 'Moving...' : 'Move'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

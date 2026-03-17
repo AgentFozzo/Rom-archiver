@@ -162,3 +162,34 @@ export const deleteGameExtra = (gameId: number, extraId: number) =>
 
 export const searchGamesForExtra = (search: string) =>
   request<GamesResponse>(`/games?search=${encodeURIComponent(search)}&limit=10`)
+
+// Platform reassignment (mismatch fix)
+export const reassignGamePlatform = (gameId: number, platform_slug: string) =>
+  request<Game>(`/games/${gameId}/reassign-platform`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform_slug }),
+  })
+
+// Library tools
+export const startReorganize = () =>
+  request<{ message: string }>('/library/reorganize', { method: 'POST' })
+
+export const getReorganizeStatus = () =>
+  request<{
+    running: boolean; progress: number; total: number
+    moved: number; skipped: number; errors: number
+    details: { game_id: number; title: string; old_platform: string; new_platform: string }[]
+  }>('/library/reorganize/status')
+
+export const getLibraryIntegrity = () =>
+  request<{ missing: import('../types').Game[]; total_checked: number }>('/library/integrity')
+
+export const removeMissingGames = () =>
+  request<{ removed: number }>('/library/integrity/missing', { method: 'DELETE' })
+
+export const getLibraryDuplicates = () =>
+  request<{ crc32: string; games: import('../types').Game[] }[]>('/library/duplicates')
+
+export const cleanupTempDownloads = () =>
+  request<{ deleted: number; freed_bytes: number }>('/downloads/temp-cleanup', { method: 'DELETE' })

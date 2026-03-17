@@ -348,3 +348,187 @@ async def process_rom_file(
     # Flush every 50 games to avoid holding too much in memory
     if scan_state["found"] % 50 == 0:
         await db.flush()
+
+
+# ─── Library tools ─────────────────────────────────────────────────────────────
+
+import zipfile as _zipfile
+
+reorganize_state = {
+    "running": False,
+    "progress": 0,
+    "total": 0,
+    "moved": 0,
+    "skipped": 0,
+    "errors": 0,
+    "details": [],
+}
+
+
+def get_reorganize_status() -> dict:
+    return dict(reorganize_state)
+
+
+def detect_platform_from_zip_contents(zip_path: str) -> Optional[str]:
+    """
+    Inspect the files inside a ZIP to find uniquely-identifiable ROM extensions.
+    Returns the first confidently-detected non-arcade platform slug, or None.
+    """
+    # Extensions too ambiguous to use for detection
+    _skip = {'.bin', '.iso', '.cue', '.img', '.pkg', '.pbp', '.chd', '.mdf',
+             '.zip', '.7z', '.rom', '.dat', '.txt', '.xml', '.json', '.cfg'}
+    try:
+        with _zipfile.ZipFile(zip_path, 'r') as zf:
+            for name in zf.namelist():
+                if name.endswith('/'):
+                    continue
+                ext = Path(name).suffix.lower()
+                if ext in _skip:
+                    continue
+                candidates = EXT_TO_PLATFORM.get(ext, [])
+                non_arcade = [c for c in candidates if c != 'arcade']
+                if len(non_arcade) == 1:
+                    return non_arcade[0]
+    except Exception:
+        pass
+    return None
+
+
+async def reorganize_library(
+    db,
+    rom_path: str,
+    igdb_client_id: str = "",
+    igdb_client_secret: str = "",
+):
+    """
+    Re-examine every game in the library:
+    - For ZIP/7Z files: peek inside to detect true platform from contained extensions
+    - For other files: re-apply extension + folder-name detection
+    Move mis-categorized files to the correct platform folder and update the DB.
+    """
+    global reorganize_state
+
+    if reorganize_state["running"]:
+        return
+
+    reorganize_state.update({
+        "running": True, "progress": 0, "total": 0,
+        "moved": 0, "skipped": 0, "errors": 0, "details": [],
+    })
+
+    try:
+        from sqlalchemy.orm import selectinload
+        result = await db.execute(
+            select(models.Game).options(selectinload(models.Game.platform))
+        )
+        games = result.scalars().all()
+        reorganize_state["total"] = len(games)
+
+        for i, game in enumerate(games):
+            reorganize_state["progress"] = i + 1
+
+            full_path = os.path.join(rom_path, game.file_path)
+            if not os.path.isfile(full_path):
+                reorganize_state["skipped"] += 1
+                continue
+
+            current_slug = game.platform.slug if game.platform else "other"
+            ext = Path(full_path).suffix.lower()
+
+            # Determine better platform
+            new_slug: Optional[str] = None
+            if ext in {'.zip', '.7z'}:
+                new_slug = detect_platform_from_zip_contents(full_path)
+            else:
+                # Re-apply path/extension detection
+                from dat_parser import EXT_TO_PLATFORM as _EXT_MAP
+                candidates = _EXT_MAP.get(ext, [])
+                non_arcade = [c for c in candidates if c != 'arcade']
+                if len(non_arcade) == 1:
+                    new_slug = non_arcade[0]
+                elif not new_slug:
+                    # Try folder name detection
+                    from dat_parser import detect_platform_from_path
+                    new_slug = detect_platform_from_path(game.file_path)
+
+            if not new_slug or new_slug == current_slug:
+                reorganize_state["skipped"] += 1
+                continue
+
+            # Move the file
+            try:
+                platform = await get_or_create_platform(db, new_slug, igdb_client_id, igdb_client_secret)
+                dest_dir = os.path.join(rom_path, new_slug)
+                os.makedirs(dest_dir, exist_ok=True)
+                dest_path = os.path.join(dest_dir, game.file_name)
+                if os.path.exists(dest_path):
+                    stem = Path(game.file_name).stem
+                    ext_s = Path(game.file_name).suffix
+                    counter = 1
+                    while os.path.exists(dest_path):
+                        dest_path = os.path.join(dest_dir, f"{stem} ({counter}){ext_s}")
+                        counter += 1
+                os.rename(full_path, dest_path)
+                game.file_path = os.path.relpath(dest_path, rom_path)
+                game.file_name = os.path.basename(dest_path)
+                game.platform_id = platform.id
+                reorganize_state["details"].append({
+                    "game_id": game.id,
+                    "title": game.title,
+                    "old_platform": current_slug,
+                    "new_platform": new_slug,
+                })
+                reorganize_state["moved"] += 1
+            except Exception as e:
+                logger.error(f"Reorganize error for '{game.title}': {e}")
+                reorganize_state["errors"] += 1
+
+        await db.commit()
+
+    finally:
+        reorganize_state["running"] = False
+        logger.info(
+            f"Reorganize done. Moved: {reorganize_state['moved']}, "
+            f"Skipped: {reorganize_state['skipped']}, Errors: {reorganize_state['errors']}"
+        )
+
+
+async def check_library_integrity(db, rom_path: str) -> dict:
+    """Return games whose ROM file no longer exists on disk."""
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(models.Game).options(selectinload(models.Game.platform))
+    )
+    games = result.scalars().all()
+    missing = []
+    for game in games:
+        full_path = os.path.join(rom_path, game.file_path)
+        if not os.path.isfile(full_path):
+            missing.append(game)
+    return {"missing": missing, "total_checked": len(games)}
+
+
+async def find_duplicate_games(db) -> list:
+    """Return groups of games that share the same CRC32 hash."""
+    from sqlalchemy import func as sqlfunc
+    from sqlalchemy.orm import selectinload
+    # Find CRC32 values that appear more than once
+    dupes_q = await db.execute(
+        select(models.Game.crc32, sqlfunc.count().label("cnt"))
+        .where(models.Game.crc32.isnot(None))
+        .group_by(models.Game.crc32)
+        .having(sqlfunc.count() > 1)
+    )
+    dup_hashes = [row[0] for row in dupes_q]
+
+    groups = []
+    for h in dup_hashes:
+        res = await db.execute(
+            select(models.Game)
+            .options(selectinload(models.Game.platform))
+            .where(models.Game.crc32 == h)
+        )
+        games = res.scalars().all()
+        groups.append({"crc32": h, "games": games})
+
+    return groups
