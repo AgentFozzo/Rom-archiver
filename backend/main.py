@@ -138,6 +138,40 @@ async def get_platform(platform_id: int, db: AsyncSession = Depends(get_db)):
     )
 
 
+@app.delete("/api/platforms/{platform_id}")
+async def delete_platform(platform_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete a platform if it has no games. Also removes the empty folder from disk."""
+    result = await db.execute(select(models.Platform).where(models.Platform.id == platform_id))
+    platform = result.scalar_one_or_none()
+    if not platform:
+        raise HTTPException(404, "Platform not found")
+
+    count_result = await db.execute(
+        select(func.count()).select_from(models.Game).where(models.Game.platform_id == platform_id)
+    )
+    count = count_result.scalar() or 0
+    if count > 0:
+        raise HTTPException(400, f"Platform still has {count} game(s). Remove all games first.")
+
+    rom_path_result = await db.execute(select(models.Setting).where(models.Setting.key == "rom_path"))
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+
+    # Remove the folder from disk if it exists and is empty
+    folder = os.path.join(rom_path, platform.slug)
+    folder_removed = False
+    if os.path.isdir(folder):
+        try:
+            os.rmdir(folder)  # only succeeds if empty
+            folder_removed = True
+        except OSError:
+            pass  # not empty or permission issue — still delete the DB record
+
+    await db.delete(platform)
+    await db.commit()
+    return {"ok": True, "folder_removed": folder_removed}
+
+
 # ─── Games ─────────────────────────────────────────────────────────────────────
 
 def _serialize_game(game: models.Game) -> schemas.GameOut:
@@ -684,6 +718,32 @@ async def cleanup_temp_downloads(db: AsyncSession = Depends(get_db)):
         except OSError:
             pass
     return {"deleted": deleted, "freed_bytes": freed_bytes}
+
+
+@app.delete("/api/library/empty-folders")
+async def cleanup_empty_folders(db: AsyncSession = Depends(get_db)):
+    """Recursively remove empty directories under the ROM path (skips hidden dirs)."""
+    rom_path_result = await db.execute(select(models.Setting).where(models.Setting.key == "rom_path"))
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+
+    removed = []
+    # Walk bottom-up so children are removed before parents
+    for dirpath, dirnames, filenames in os.walk(rom_path, topdown=False):
+        # Skip hidden directories entirely
+        if any(part.startswith('.') for part in Path(dirpath).relative_to(rom_path).parts):
+            continue
+        if dirpath == rom_path:
+            continue
+        # Remove if truly empty (no files, no subdirs remaining)
+        try:
+            if not os.listdir(dirpath):
+                os.rmdir(dirpath)
+                removed.append(os.path.relpath(dirpath, rom_path))
+        except OSError:
+            pass
+
+    return {"removed": len(removed), "folders": removed}
 
 
 # ─── BIOS / System Files ──────────────────────────────────────────────────────

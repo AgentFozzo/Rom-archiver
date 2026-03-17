@@ -1,16 +1,25 @@
 import { useState, useMemo } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getPlatforms, getGames } from '../api/client'
-import { Search, ChevronDown, ChevronRight, Filter } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { getPlatforms, getGames, deletePlatform } from '../api/client'
+import { Search, ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import type { Game } from '../types'
 
 export default function Sidebar() {
   const location = useLocation()
   const { gameId } = useParams()
+  const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [expandedPlatforms, setExpandedPlatforms] = useState<Set<number>>(new Set())
+
+  const deletePlatformMutation = useMutation({
+    mutationFn: deletePlatform,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['platforms'] })
+      qc.invalidateQueries({ queryKey: ['stats'] })
+    },
+  })
 
   const { data: platforms = [] } = useQuery({
     queryKey: ['platforms'],
@@ -87,23 +96,38 @@ export default function Sidebar() {
           const expanded = isExpanded(platform.id)
 
           return (
-            <div key={platform.id}>
+            <div key={platform.id} className="group/platform">
               {/* Platform header */}
-              <button
-                onClick={() => togglePlatform(platform.id)}
-                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold
-                           text-steam-muted uppercase tracking-wider hover:text-steam-text
-                           transition-colors"
-              >
-                {expanded
-                  ? <ChevronDown size={10} className="flex-shrink-0" />
-                  : <ChevronRight size={10} className="flex-shrink-0" />
-                }
-                <span className="truncate">{platform.name}</span>
-                <span className="ml-auto text-steam-dim font-normal">
-                  ({platformGames.length})
-                </span>
-              </button>
+              <div className="flex items-center">
+                <button
+                  onClick={() => togglePlatform(platform.id)}
+                  className="flex-1 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold
+                             text-steam-muted uppercase tracking-wider hover:text-steam-text
+                             transition-colors min-w-0"
+                >
+                  {expanded
+                    ? <ChevronDown size={10} className="flex-shrink-0" />
+                    : <ChevronRight size={10} className="flex-shrink-0" />
+                  }
+                  <span className="truncate">{platform.name}</span>
+                  <span className="ml-auto text-steam-dim font-normal flex-shrink-0">
+                    ({platformGames.length})
+                  </span>
+                </button>
+                {platform.game_count === 0 && (
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete empty platform "${platform.name}"?`))
+                        deletePlatformMutation.mutate(platform.id)
+                    }}
+                    title="Delete empty platform"
+                    className="flex-shrink-0 opacity-0 group-hover/platform:opacity-100 pr-2
+                               text-steam-dim hover:text-steam-danger transition-all"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
+              </div>
 
               {/* Game entries */}
               {expanded && (

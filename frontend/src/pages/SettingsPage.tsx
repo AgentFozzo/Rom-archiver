@@ -5,7 +5,7 @@ import {
   startScan, getScanStatus,
   startReorganize, getReorganizeStatus,
   getLibraryIntegrity, removeMissingGames,
-  getLibraryDuplicates, cleanupTempDownloads,
+  getLibraryDuplicates, cleanupTempDownloads, cleanupEmptyFolders,
 } from '../api/client'
 import type { Settings } from '../types'
 import {
@@ -437,6 +437,13 @@ function LibraryToolsSection() {
     onSuccess: (r) => setTempResult(r),
   })
 
+  // ── Empty folders cleanup ──
+  const [emptyFoldersResult, setEmptyFoldersResult] = useState<{ removed: number } | null>(null)
+  const emptyFoldersMutation = useMutation({
+    mutationFn: cleanupEmptyFolders,
+    onSuccess: (r) => setEmptyFoldersResult(r),
+  })
+
   // ── Integrity ──
   const [integrityResult, setIntegrityResult] = useState<
     { missing: import('../types').Game[]; total_checked: number } | null
@@ -561,6 +568,33 @@ function LibraryToolsSection() {
           >
             {tempMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
             Clear
+          </button>
+        </div>
+
+        {/* Empty folders cleanup */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-steam-text text-xs font-medium flex items-center gap-1.5">
+              <Folder size={12} className="text-orange-400" /> Clean Empty Folders
+            </p>
+            <p className="text-steam-dim text-[10px]">
+              Remove empty directories from your ROM folder.
+              {emptyFoldersResult && (
+                <span className="text-steam-verified ml-1">
+                  Removed {emptyFoldersResult.removed} folder{emptyFoldersResult.removed !== 1 ? 's' : ''}.
+                </span>
+              )}
+            </p>
+          </div>
+          <button
+            onClick={() => { setEmptyFoldersResult(null); emptyFoldersMutation.mutate() }}
+            disabled={emptyFoldersMutation.isPending}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-steam-bg-deep border border-steam-border
+                       text-steam-muted hover:text-white px-3 py-1.5 rounded text-xs transition-colors
+                       disabled:opacity-50"
+          >
+            {emptyFoldersMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <Folder size={11} />}
+            Clean
           </button>
         </div>
       </div>

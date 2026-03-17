@@ -18,6 +18,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // Platforms
 export const getPlatforms = () => request<Platform[]>('/platforms')
 export const getPlatform = (id: number) => request<Platform>(`/platforms/${id}`)
+export const deletePlatform = (id: number) =>
+  request<{ ok: boolean; folder_removed: boolean }>(`/platforms/${id}`, { method: 'DELETE' })
 
 // Games
 export const getGames = (params: {
@@ -209,3 +211,6 @@ export const getLibraryDuplicates = () =>
 
 export const cleanupTempDownloads = () =>
   request<{ deleted: number; freed_bytes: number }>('/downloads/temp-cleanup', { method: 'DELETE' })
+
+export const cleanupEmptyFolders = () =>
+  request<{ removed: number; folders: string[] }>('/library/empty-folders', { method: 'DELETE' })
