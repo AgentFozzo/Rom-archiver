@@ -185,7 +185,8 @@ async def scan_library(
     })
 
     try:
-        rom_files = collect_rom_files(rom_path)
+        loop = asyncio.get_running_loop()
+        rom_files = await loop.run_in_executor(None, collect_rom_files, rom_path)
         scan_state["total"] = len(rom_files)
         logger.info(f"Found {len(rom_files)} ROM files to scan")
 
@@ -400,7 +401,7 @@ def extract_zip_roms(zip_path: str, dest_dir: str) -> list[str]:
 
 
 def collect_rom_files(rom_path: str) -> list[str]:
-    """Recursively collect all ROM files from the given path, extracting ZIPs first."""
+    """Recursively collect all ROM files from the given path."""
     files = []
     for root, dirs, filenames in os.walk(rom_path):
         # Skip hidden directories
@@ -409,13 +410,8 @@ def collect_rom_files(rom_path: str) -> list[str]:
             if filename.startswith("."):
                 continue
             ext = Path(filename).suffix.lower()
-            full_path = os.path.join(root, filename)
-            if ext == ".zip":
-                # Extract in-place; replace ZIP entries with extracted ROM paths
-                extracted = extract_zip_roms(full_path, root)
-                files.extend(extracted)
-            elif ext in ALL_ROM_EXTENSIONS:
-                files.append(full_path)
+            if ext in ALL_ROM_EXTENSIONS:
+                files.append(os.path.join(root, filename))
     return sorted(files)
 
 
@@ -575,27 +571,68 @@ async def check_library_integrity(db, rom_path: str) -> dict:
     return {"missing": missing, "total_checked": len(games)}
 
 
+def _normalize_title(title: str) -> str:
+    """Lower-case, strip punctuation/spaces for fuzzy title matching."""
+    import re
+    return re.sub(r'[^a-z0-9]', '', title.lower())
+
+
 async def find_duplicate_games(db) -> list:
-    """Return groups of games that share the same CRC32 hash."""
+    """
+    Return groups of duplicate games using two strategies:
+    1. Same CRC32 hash (exact byte-for-byte duplicates)
+    2. Same normalised title on the same platform (same game, different files/formats)
+    Groups are de-duplicated so a game only appears in one group.
+    """
     from sqlalchemy import func as sqlfunc
     from sqlalchemy.orm import selectinload
-    # Find CRC32 values that appear more than once
+
+    seen_ids: set[int] = set()
+    groups = []
+
+    # ── Strategy 1: exact CRC32 match ──
     dupes_q = await db.execute(
         select(models.Game.crc32, sqlfunc.count().label("cnt"))
         .where(models.Game.crc32.isnot(None))
         .group_by(models.Game.crc32)
         .having(sqlfunc.count() > 1)
     )
-    dup_hashes = [row[0] for row in dupes_q]
-
-    groups = []
-    for h in dup_hashes:
+    for (h,) in dupes_q:
         res = await db.execute(
             select(models.Game)
             .options(selectinload(models.Game.platform))
             .where(models.Game.crc32 == h)
         )
         games = res.scalars().all()
-        groups.append({"crc32": h, "games": games})
+        game_ids = [g.id for g in games]
+        if any(gid in seen_ids for gid in game_ids):
+            continue
+        seen_ids.update(game_ids)
+        groups.append({"match_type": "crc32", "crc32": h, "games": games})
+
+    # ── Strategy 2: same normalised title + same platform ──
+    all_res = await db.execute(
+        select(models.Game).options(selectinload(models.Game.platform))
+    )
+    all_games = all_res.scalars().all()
+
+    # Group by (normalized_title, platform_id)
+    title_map: dict[tuple, list] = {}
+    for game in all_games:
+        if game.id in seen_ids:
+            continue
+        key = (_normalize_title(game.title), game.platform_id)
+        title_map.setdefault(key, []).append(game)
+
+    for (norm_title, platform_id), game_list in title_map.items():
+        if len(game_list) < 2:
+            continue
+        game_ids = [g.id for g in game_list]
+        seen_ids.update(game_ids)
+        groups.append({
+            "match_type": "title",
+            "crc32": None,
+            "games": game_list,
+        })
 
     return groups

@@ -211,6 +211,7 @@ class IntegrityResult(BaseModel):
 
 
 class DuplicateGroup(BaseModel):
+    match_type: str = "crc32"
     crc32: Optional[str]
     games: List[GameOut]
 

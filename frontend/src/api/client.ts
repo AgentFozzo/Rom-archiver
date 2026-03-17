@@ -207,7 +207,10 @@ export const removeMissingGames = () =>
   request<{ removed: number }>('/library/integrity/missing', { method: 'DELETE' })
 
 export const getLibraryDuplicates = () =>
-  request<{ crc32: string; games: import('../types').Game[] }[]>('/library/duplicates')
+  request<{ match_type: string; crc32: string | null; games: import('../types').Game[] }[]>('/library/duplicates')
+
+export const autoCleanDuplicates = () =>
+  request<{ removed: number; freed_bytes: number }>('/library/duplicates/auto-clean', { method: 'DELETE' })
 
 export const cleanupTempDownloads = () =>
   request<{ deleted: number; freed_bytes: number }>('/downloads/temp-cleanup', { method: 'DELETE' })

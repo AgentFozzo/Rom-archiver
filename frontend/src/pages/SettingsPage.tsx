@@ -5,7 +5,7 @@ import {
   startScan, getScanStatus,
   startReorganize, getReorganizeStatus,
   getLibraryIntegrity, removeMissingGames,
-  getLibraryDuplicates, cleanupTempDownloads, cleanupEmptyFolders,
+  getLibraryDuplicates, autoCleanDuplicates, cleanupTempDownloads, cleanupEmptyFolders,
 } from '../api/client'
 import type { Settings } from '../types'
 import {
@@ -462,11 +462,21 @@ function LibraryToolsSection() {
 
   // ── Duplicates ──
   const [dupResult, setDupResult] = useState<
-    { crc32: string; games: import('../types').Game[] }[] | null
+    { match_type: string; crc32: string | null; games: import('../types').Game[] }[] | null
   >(null)
+  const [cleanResult, setCleanResult] = useState<{ removed: number; freed_bytes: number } | null>(null)
   const dupMutation = useMutation({
     mutationFn: getLibraryDuplicates,
-    onSuccess: (r) => setDupResult(r),
+    onSuccess: (r) => { setDupResult(r); setCleanResult(null) },
+  })
+  const autoCleanMutation = useMutation({
+    mutationFn: autoCleanDuplicates,
+    onSuccess: (r) => {
+      setCleanResult(r)
+      setDupResult(null)
+      qc.invalidateQueries({ queryKey: ['games'] })
+      qc.invalidateQueries({ queryKey: ['platforms'] })
+    },
   })
 
   const isReorging = reorgStatus?.running ?? false
@@ -669,11 +679,11 @@ function LibraryToolsSection() {
               <Copy size={12} className="text-purple-400" /> Find Duplicates
             </p>
             <p className="text-steam-dim text-[10px]">
-              Detect games with identical CRC32 hashes (exact file copies).
+              Detects exact file copies (CRC32) and same-title games on the same platform.
             </p>
           </div>
           <button
-            onClick={() => { setDupResult(null); dupMutation.mutate() }}
+            onClick={() => { setDupResult(null); setCleanResult(null); dupMutation.mutate() }}
             disabled={dupMutation.isPending}
             className="flex-shrink-0 flex items-center gap-1.5 bg-steam-bg-deep border border-steam-border
                        text-steam-muted hover:text-white px-3 py-1.5 rounded text-xs transition-colors
@@ -684,32 +694,57 @@ function LibraryToolsSection() {
           </button>
         </div>
 
+        {cleanResult && (
+          <p className="text-steam-verified text-xs flex items-center gap-1.5">
+            <CheckCircle size={11} /> Removed {cleanResult.removed} duplicate{cleanResult.removed !== 1 ? 's' : ''}, freed {formatBytes(cleanResult.freed_bytes)}.
+          </p>
+        )}
+
         {dupResult && (
-          <div className="bg-steam-bg-deep border border-steam-border rounded-lg p-3 animate-fade-in">
+          <div className="bg-steam-bg-deep border border-steam-border rounded-lg p-3 animate-fade-in space-y-2">
             {dupResult.length === 0 ? (
               <p className="text-steam-verified text-xs flex items-center gap-1.5">
-                <CheckCircle size={11} /> No duplicate files found.
+                <CheckCircle size={11} /> No duplicates found.
               </p>
             ) : (
-              <div className="space-y-2">
-                <p className="text-yellow-400 text-xs font-medium">
-                  {dupResult.length} duplicate group{dupResult.length !== 1 ? 's' : ''} found
-                </p>
-                <div className="max-h-36 overflow-y-auto space-y-2">
-                  {dupResult.map(group => (
-                    <div key={group.crc32} className="space-y-0.5">
-                      <p className="text-steam-dim text-[10px] font-mono">CRC32: {group.crc32}</p>
+              <>
+                <div className="flex items-center justify-between">
+                  <p className="text-yellow-400 text-xs font-medium">
+                    {dupResult.length} duplicate group{dupResult.length !== 1 ? 's' : ''} found
+                  </p>
+                  <button
+                    onClick={() => {
+                      const total = dupResult.reduce((n, g) => n + g.games.length - 1, 0)
+                      if (confirm(`Auto-delete ${total} duplicate(s)? Keeps the copy with the most metadata.`))
+                        autoCleanMutation.mutate()
+                    }}
+                    disabled={autoCleanMutation.isPending}
+                    className="flex items-center gap-1 text-steam-danger text-[10px] hover:underline disabled:opacity-50"
+                  >
+                    {autoCleanMutation.isPending ? <Loader2 size={9} className="animate-spin" /> : <Trash2 size={9} />}
+                    Auto-clean all
+                  </button>
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-2">
+                  {dupResult.map((group, i) => (
+                    <div key={i} className="space-y-0.5">
+                      <p className="text-steam-dim text-[10px]">
+                        {group.match_type === 'crc32'
+                          ? <span className="font-mono">CRC32: {group.crc32}</span>
+                          : <span className="text-purple-400">Same title · {group.games[0]?.platform?.name}</span>
+                        }
+                      </p>
                       {group.games.map(g => (
                         <div key={g.id} className="flex items-center gap-1.5 text-[10px] text-steam-muted pl-2">
                           <Copy size={9} className="text-purple-400 flex-shrink-0" />
                           <span className="truncate flex-1">{g.title}</span>
-                          <span className="text-steam-dim flex-shrink-0">{g.platform?.name}</span>
+                          <span className="text-steam-dim font-mono flex-shrink-0 text-[9px]">{g.file_name}</span>
                         </div>
                       ))}
                     </div>
                   ))}
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}

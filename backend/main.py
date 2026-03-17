@@ -690,9 +690,67 @@ async def remove_missing_games(db: AsyncSession = Depends(get_db)):
 async def library_duplicates(db: AsyncSession = Depends(get_db)):
     groups = await find_duplicate_games(db)
     return [
-        {"crc32": g["crc32"], "games": [_serialize_game(game) for game in g["games"]]}
+        {
+            "match_type": g.get("match_type", "crc32"),
+            "crc32": g["crc32"],
+            "games": [_serialize_game(game) for game in g["games"]],
+        }
         for g in groups
     ]
+
+
+@app.delete("/api/library/duplicates/auto-clean")
+async def auto_clean_duplicates(db: AsyncSession = Depends(get_db)):
+    """
+    For each duplicate group, keep the 'best' copy and delete the rest from DB and disk.
+    Best = has IGDB metadata > has DAT title > largest file size.
+    """
+    rom_path_result = await db.execute(select(models.Setting).where(models.Setting.key == "rom_path"))
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+
+    from scanner import find_duplicate_games as _find_dupes
+
+    groups = await _find_dupes(db)
+    removed = 0
+    freed_bytes = 0
+
+    for group in groups:
+        games = group["games"]
+        if len(games) < 2:
+            continue
+
+        # Score each game: higher = better copy to keep
+        def score(g):
+            s = 0
+            if g.igdb_id:
+                s += 100
+            if g.cover_url:
+                s += 20
+            if g.dat_verified:
+                s += 10
+            if g.dat_title:
+                s += 5
+            s += (g.file_size or 0) // (1024 * 1024)  # MB bonus
+            return s
+
+        games_sorted = sorted(games, key=score, reverse=True)
+        keep = games_sorted[0]
+        to_delete = games_sorted[1:]
+
+        for game in to_delete:
+            full_path = os.path.join(rom_path, game.file_path)
+            try:
+                if os.path.isfile(full_path):
+                    freed_bytes += os.path.getsize(full_path)
+                    os.remove(full_path)
+            except OSError:
+                pass
+            await db.delete(game)
+            removed += 1
+
+    await db.commit()
+    return {"removed": removed, "freed_bytes": freed_bytes}
 
 
 @app.delete("/api/downloads/temp-cleanup", response_model=schemas.TempCleanupResult)
