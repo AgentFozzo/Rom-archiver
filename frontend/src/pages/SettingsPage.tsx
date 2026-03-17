@@ -11,7 +11,7 @@ import type { Settings } from '../types'
 import {
   Save, Upload, Trash2, RefreshCw, CheckCircle, AlertCircle,
   Eye, EyeOff, Loader2, ExternalLink, Database, ArrowLeft, FileCheck,
-  FolderSync, ShieldAlert, Copy, Folder, Wrench, Link2,
+  FolderSync, ShieldAlert, Copy, Folder, Wrench, Link2, ChevronDown,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState<Settings | null>(null)
   const [showSecret, setShowSecret] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
+  const [datsOpen, setDatsOpen] = useState(false)
   const [importState, setImportState] = useState<{
     active: boolean
     total: number
@@ -298,22 +299,41 @@ export default function SettingsPage() {
           </div>
         )}
         {dats.length > 0 && (
-          <div className="space-y-1.5 mt-3">
-            {dats.map(dat => (
-              <div key={dat.id} className="flex items-center gap-2 bg-steam-bg-deep border border-steam-border rounded-lg p-2.5">
-                <Database size={13} className="text-steam-dim flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-steam-text text-xs font-medium truncate">{dat.name}</p>
-                  <p className="text-steam-dim text-[10px]">{dat.entry_count.toLocaleString()} entries</p>
-                </div>
-                <button
-                  onClick={() => { if (confirm(`Remove "${dat.name}"?`)) deleteDatMutation.mutate(dat.id) }}
-                  className="text-steam-dim hover:text-steam-danger transition-colors"
-                >
-                  <Trash2 size={12} />
-                </button>
+          <div className="mt-3">
+            <button
+              onClick={() => setDatsOpen(o => !o)}
+              className="w-full flex items-center justify-between gap-2 bg-steam-bg-deep border border-steam-border
+                         rounded-lg px-3 py-2 hover:border-steam-blue/30 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-xs text-steam-text font-medium">
+                <Database size={13} className="text-steam-dim" />
+                Imported DATs
+                <span className="text-steam-dim font-normal">({dats.length})</span>
+              </span>
+              <ChevronDown
+                size={14}
+                className={clsx('text-steam-dim transition-transform duration-200', datsOpen && 'rotate-180')}
+              />
+            </button>
+            {datsOpen && (
+              <div className="space-y-1.5 mt-1.5">
+                {dats.map(dat => (
+                  <div key={dat.id} className="flex items-center gap-2 bg-steam-bg-deep border border-steam-border rounded-lg p-2.5">
+                    <Database size={13} className="text-steam-dim flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-steam-text text-xs font-medium truncate">{dat.name}</p>
+                      <p className="text-steam-dim text-[10px]">{dat.entry_count.toLocaleString()} entries</p>
+                    </div>
+                    <button
+                      onClick={() => { if (confirm(`Remove "${dat.name}"?`)) deleteDatMutation.mutate(dat.id) }}
+                      className="text-steam-dim hover:text-steam-danger transition-colors"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </Section>
