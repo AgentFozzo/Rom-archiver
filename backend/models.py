@@ -45,6 +45,7 @@ class Game(Base):
     sha1 = Column(String, nullable=True, index=True)
     dat_verified = Column(Boolean, default=False)
     dat_title = Column(String, nullable=True)       # canonical name from DAT
+    is_favorite = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

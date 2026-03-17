@@ -188,6 +188,7 @@ def _serialize_game(game: models.Game) -> schemas.GameOut:
         sha1=game.sha1,
         dat_verified=game.dat_verified,
         dat_title=game.dat_title,
+        is_favorite=game.is_favorite or False,
         created_at=game.created_at,
         platform=platform,
     )
@@ -201,6 +202,7 @@ async def list_games(
     order: str = "asc",
     page: int = 1,
     limit: int = 50,
+    favorites_only: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy.orm import selectinload
@@ -209,6 +211,9 @@ async def list_games(
 
     if platform_id:
         query = query.where(models.Game.platform_id == platform_id)
+
+    if favorites_only:
+        query = query.where(models.Game.is_favorite == True)
 
     if search:
         pattern = f"%{search}%"
@@ -233,6 +238,8 @@ async def list_games(
     count_query = select(func.count()).select_from(models.Game)
     if platform_id:
         count_query = count_query.where(models.Game.platform_id == platform_id)
+    if favorites_only:
+        count_query = count_query.where(models.Game.is_favorite == True)
     if search:
         count_query = count_query.where(
             or_(models.Game.title.ilike(f"%{search}%"), models.Game.file_name.ilike(f"%{search}%"))
@@ -300,6 +307,133 @@ async def delete_game(game_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(game)
     await db.commit()
     return {"ok": True}
+
+
+@app.post("/api/games/batch", response_model=schemas.BatchResult)
+async def batch_game_action(
+    body: schemas.BatchAction,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk delete, refresh-metadata, or reassign-platform for a list of game IDs."""
+    if not body.game_ids:
+        raise HTTPException(400, "No game IDs provided")
+
+    rom_path_result = await db.execute(select(models.Setting).where(models.Setting.key == "rom_path"))
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+
+    if body.action == "delete":
+        affected = 0
+        for gid in body.game_ids:
+            result = await db.execute(select(models.Game).where(models.Game.id == gid))
+            game = result.scalar_one_or_none()
+            if not game:
+                continue
+            full_path = os.path.join(rom_path, game.file_path)
+            if os.path.isfile(full_path):
+                try:
+                    os.remove(full_path)
+                except OSError:
+                    pass
+            await db.delete(game)
+            affected += 1
+        await db.commit()
+        return schemas.BatchResult(ok=True, affected=affected)
+
+    elif body.action == "reassign-platform":
+        if not body.platform_slug:
+            raise HTTPException(400, "platform_slug required for reassign-platform")
+        cid, csec = await get_igdb_creds(db)
+        from scanner import get_or_create_platform
+        platform = await get_or_create_platform(db, body.platform_slug, cid, csec)
+        affected = 0
+        for gid in body.game_ids:
+            from sqlalchemy.orm import selectinload as _sil
+            result = await db.execute(
+                select(models.Game).options(_sil(models.Game.platform)).where(models.Game.id == gid)
+            )
+            game = result.scalar_one_or_none()
+            if not game:
+                continue
+            old_path = os.path.join(rom_path, game.file_path)
+            dest_dir = os.path.join(rom_path, body.platform_slug)
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, game.file_name)
+            if os.path.exists(dest) and dest != old_path:
+                stem, ext = Path(game.file_name).stem, Path(game.file_name).suffix
+                c = 1
+                while os.path.exists(dest):
+                    dest = os.path.join(dest_dir, f"{stem} ({c}){ext}"); c += 1
+            if os.path.isfile(old_path):
+                os.rename(old_path, dest)
+            game.file_path = os.path.relpath(dest, rom_path)
+            game.file_name = os.path.basename(dest)
+            game.platform_id = platform.id
+            affected += 1
+        await db.commit()
+        return schemas.BatchResult(ok=True, affected=affected)
+
+    elif body.action == "refresh-metadata":
+        # Run in background so the API returns immediately
+        cid, csec = await get_igdb_creds(db)
+        game_ids = list(body.game_ids)
+
+        async def _do_refresh():
+            from database import AsyncSessionLocal
+            from sqlalchemy.orm import selectinload as _sil
+            import json as _json
+            async with AsyncSessionLocal() as s:
+                for gid in game_ids:
+                    try:
+                        r = await s.execute(
+                            select(models.Game).options(_sil(models.Game.platform)).where(models.Game.id == gid)
+                        )
+                        game = r.scalar_one_or_none()
+                        if not game:
+                            continue
+                        search_title = game.dat_title or game.title
+                        from scanner import fetch_igdb_metadata
+                        igdb_data = await fetch_igdb_metadata(
+                            s, search_title,
+                            game.platform.igdb_id if game.platform else None,
+                            cid, csec,
+                        )
+                        if igdb_data:
+                            game.igdb_id = igdb_data.get("igdb_id")
+                            game.cover_url = igdb_data.get("cover_url")
+                            game.summary = igdb_data.get("summary")
+                            game.rating = igdb_data.get("rating")
+                            game.release_date = igdb_data.get("release_date")
+                            game.genres = _json.dumps(igdb_data.get("genres") or [])
+                            game.developer = igdb_data.get("developer")
+                            game.publisher = igdb_data.get("publisher")
+                            game.screenshots = _json.dumps(igdb_data.get("screenshots") or [])
+                            game.title = igdb_data.get("title") or game.title
+                    except Exception as e:
+                        logger.warning(f"Batch refresh failed for game {gid}: {e}")
+                await s.commit()
+
+        background_tasks.add_task(_do_refresh)
+        return schemas.BatchResult(ok=True, affected=len(body.game_ids), message="Refresh started in background")
+
+    else:
+        raise HTTPException(400, f"Unknown action: {body.action}")
+
+
+@app.post("/api/games/{game_id}/favorite", response_model=schemas.GameOut)
+async def toggle_favorite(game_id: int, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(models.Game).options(selectinload(models.Game.platform)).where(models.Game.id == game_id)
+    )
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    game.is_favorite = not (game.is_favorite or False)
+    await db.commit()
+    await db.refresh(game)
+    return _serialize_game(game)
 
 
 @app.post("/api/games/{game_id}/reassign-platform", response_model=schemas.GameOut)

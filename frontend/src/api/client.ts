@@ -27,6 +27,7 @@ export const getGames = (params: {
   order?: string
   page?: number
   limit?: number
+  favorites_only?: boolean
 }) => {
   const qs = new URLSearchParams()
   if (params.platform_id) qs.set('platform_id', String(params.platform_id))
@@ -35,6 +36,7 @@ export const getGames = (params: {
   if (params.order) qs.set('order', params.order)
   if (params.page) qs.set('page', String(params.page))
   if (params.limit) qs.set('limit', String(params.limit))
+  if (params.favorites_only) qs.set('favorites_only', 'true')
   return request<GamesResponse>(`/games?${qs}`)
 }
 
@@ -164,6 +166,20 @@ export const searchGamesForExtra = (search: string) =>
   request<GamesResponse>(`/games?search=${encodeURIComponent(search)}&limit=10`)
 
 // Platform reassignment (mismatch fix)
+export const toggleFavorite = (id: number) =>
+  request<Game>(`/games/${id}/favorite`, { method: 'POST' })
+
+export const batchGames = (
+  game_ids: number[],
+  action: 'delete' | 'refresh-metadata' | 'reassign-platform',
+  platform_slug?: string,
+) =>
+  request<{ ok: boolean; affected: number; message?: string }>('/games/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game_ids, action, platform_slug }),
+  })
+
 export const reassignGamePlatform = (gameId: number, platform_slug: string) =>
   request<Game>(`/games/${gameId}/reassign-platform`, {
     method: 'POST',

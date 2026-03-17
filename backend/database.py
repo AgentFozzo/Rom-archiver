@@ -27,6 +27,7 @@ async def init_db():
         for stmt in [
             "ALTER TABLE downloads ADD COLUMN extra_type VARCHAR",
             "ALTER TABLE downloads ADD COLUMN target_game_id INTEGER",
+            "ALTER TABLE games ADD COLUMN is_favorite BOOLEAN DEFAULT 0",
         ]:
             try:
                 await conn.execute(text(stmt))

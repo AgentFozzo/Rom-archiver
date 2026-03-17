@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getGame, downloadGameFile, refreshGameMetadata, deleteGame, igdbSearch,
   getGameExtras, uploadGameExtras, downloadGameExtra, deleteGameExtra,
-  reassignGamePlatform, getPlatformOptions,
+  reassignGamePlatform, getPlatformOptions, toggleFavorite,
 } from '../api/client'
 import {
   Download, RefreshCw, Trash2, Star, Calendar, HardDrive,
@@ -60,6 +60,14 @@ export default function GameDetailPage() {
       qc.invalidateQueries({ queryKey: ['games'] })
       qc.invalidateQueries({ queryKey: ['platforms'] })
       navigate('/')
+    },
+  })
+
+  const favMutation = useMutation({
+    mutationFn: () => toggleFavorite(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['game', id] })
+      qc.invalidateQueries({ queryKey: ['games'] })
     },
   })
 
@@ -169,16 +177,31 @@ export default function GameDetailPage() {
 
               {/* Action buttons */}
               <div className="mt-3 space-y-1.5">
-                <button
-                  onClick={() => downloadGameFile(game.id)}
-                  className="w-full flex items-center justify-center gap-2 bg-steam-green
-                             hover:bg-steam-green-light/20 border border-steam-green-light/30
-                             text-steam-green-light py-2.5 rounded text-sm font-bold
-                             active:scale-95 transition-all"
-                >
-                  <Download size={15} />
-                  Download ROM
-                </button>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => downloadGameFile(game.id)}
+                    className="flex-1 flex items-center justify-center gap-2 bg-steam-green
+                               hover:bg-steam-green-light/20 border border-steam-green-light/30
+                               text-steam-green-light py-2.5 rounded text-sm font-bold
+                               active:scale-95 transition-all"
+                  >
+                    <Download size={15} />
+                    Download ROM
+                  </button>
+                  <button
+                    onClick={() => favMutation.mutate()}
+                    disabled={favMutation.isPending}
+                    className={clsx(
+                      'flex-shrink-0 flex items-center justify-center w-10 rounded border transition-all active:scale-95',
+                      game.is_favorite
+                        ? 'bg-yellow-400/10 border-yellow-400/40 text-yellow-400'
+                        : 'bg-steam-bg-deep border-steam-border text-steam-muted hover:text-yellow-400 hover:border-yellow-400/30'
+                    )}
+                    title={game.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    <Star size={15} className={clsx(game.is_favorite && 'fill-yellow-400')} />
+                  </button>
+                </div>
 
                 <div className="grid grid-cols-3 gap-1.5">
                   <button

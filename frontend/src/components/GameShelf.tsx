@@ -9,9 +9,10 @@ interface Props {
   title: string
   games: Game[]
   large?: boolean
+  headerExtra?: React.ReactNode
 }
 
-export default function GameShelf({ title, games, large }: Props) {
+export default function GameShelf({ title, games, large, headerExtra }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   if (games.length === 0) return null
@@ -29,7 +30,10 @@ export default function GameShelf({ title, games, large }: Props) {
     <div className="mb-8 group/shelf">
       {/* Header */}
       <div className="flex items-center justify-between mb-3 px-6">
-        <h2 className="text-sm font-bold text-steam-text uppercase tracking-wider">{title}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-bold text-steam-text uppercase tracking-wider">{title}</h2>
+          {headerExtra}
+        </div>
         <div className="flex gap-1 opacity-0 group-hover/shelf:opacity-100 transition-opacity">
           <button
             onClick={() => scroll('left')}
@@ -45,6 +49,7 @@ export default function GameShelf({ title, games, large }: Props) {
           </button>
         </div>
       </div>
+
 
       {/* Scroll container */}
       <div

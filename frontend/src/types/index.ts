@@ -31,6 +31,7 @@ export interface Game {
   sha1?: string
   dat_verified: boolean
   dat_title?: string
+  is_favorite?: boolean
   created_at?: string
 }
 

@@ -1,9 +1,9 @@
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useQueries } from '@tanstack/react-query'
 import { getGames, getStats, getPlatforms } from '../api/client'
 import GameShelf from '../components/GameShelf'
 import GameGrid from '../components/GameGrid'
-import { Gamepad2, Database, ShieldCheck, HardDrive } from 'lucide-react'
+import { Gamepad2, Database, ShieldCheck, HardDrive, Star } from 'lucide-react'
 import type { Game } from '../types'
 
 function formatBytes(bytes: number): string {
@@ -44,6 +44,13 @@ export default function Library() {
     staleTime: 30_000,
   })
 
+  // Favorites
+  const { data: favData } = useQuery({
+    queryKey: ['games', 'favorites'],
+    queryFn: () => getGames({ favorites_only: true, sort: 'title', limit: 20 }),
+    staleTime: 30_000,
+  })
+
   // Per-platform shelves (top 3 platforms with games)
   const topPlatforms = platforms.filter(p => p.game_count > 0).slice(0, 4)
 
@@ -62,6 +69,7 @@ export default function Library() {
 
   const recentGames = recentData?.games ?? []
   const topRated = topRatedData?.games ?? []
+  const favorites = favData?.games ?? []
 
   return (
     <div className="animate-fade-in pb-8">
@@ -91,6 +99,23 @@ export default function Library() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Favorites shelf */}
+      {favorites.length > 0 && (
+        <GameShelf
+          title="Favorites"
+          games={favorites}
+          headerExtra={
+            <Link
+              to="/favorites"
+              className="text-steam-dim hover:text-steam-blue text-[10px] transition-colors flex items-center gap-1"
+            >
+              <Star size={10} className="text-yellow-400 fill-yellow-400" />
+              View all
+            </Link>
+          }
+        />
       )}
 
       {/* Recent Games shelf */}

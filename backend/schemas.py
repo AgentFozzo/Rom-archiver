@@ -50,6 +50,7 @@ class GameOut(BaseModel):
     sha1: Optional[str] = None
     dat_verified: bool = False
     dat_title: Optional[str] = None
+    is_favorite: bool = False
     created_at: Optional[datetime] = None
     platform: Optional[PlatformOut] = None
 
@@ -181,6 +182,19 @@ class ReorganizeStatus(BaseModel):
 
 class PlatformReassign(BaseModel):
     platform_slug: str
+
+
+class BatchAction(BaseModel):
+    game_ids: List[int]
+    # "delete" | "refresh-metadata" | "reassign-platform"
+    action: str
+    platform_slug: Optional[str] = None  # for reassign-platform
+
+
+class BatchResult(BaseModel):
+    ok: bool
+    affected: int
+    message: Optional[str] = None
 
 
 class TempCleanupResult(BaseModel):
