@@ -283,8 +283,8 @@ async def process_rom_file(
     dat_verified = dat_entry is not None
     dat_title = dat_entry["game_name"] if dat_entry else None
 
-    # Determine search title
-    search_title = dat_title or clean_rom_name(file_name)
+    # Determine search title - always strip () and [] tags for IGDB lookup
+    search_title = clean_rom_name(dat_title or file_name)
     region = extract_region(file_name)
     revision = extract_revision(file_name)
 

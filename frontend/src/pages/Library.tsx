@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { getGames, getStats, getPlatforms } from '../api/client'
 import GameShelf from '../components/GameShelf'
 import GameGrid from '../components/GameGrid'
@@ -47,14 +47,13 @@ export default function Library() {
   // Per-platform shelves (top 3 platforms with games)
   const topPlatforms = platforms.filter(p => p.game_count > 0).slice(0, 4)
 
-  const platformQueries = topPlatforms.map(p =>
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useQuery({
+  const platformQueries = useQueries({
+    queries: topPlatforms.map(p => ({
       queryKey: ['games', 'platform-shelf', p.id],
       queryFn: () => getGames({ platform_id: p.id, sort: 'rating', order: 'desc', limit: 15 }),
       staleTime: 60_000,
-    })
-  )
+    })),
+  })
 
   // If searching, show grid
   if (search) {
