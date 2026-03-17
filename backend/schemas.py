@@ -51,6 +51,7 @@ class GameOut(BaseModel):
     dat_verified: bool = False
     dat_title: Optional[str] = None
     is_favorite: bool = False
+    trailer_youtube_id: Optional[str] = None
     created_at: Optional[datetime] = None
     platform: Optional[PlatformOut] = None
 
@@ -85,6 +86,7 @@ class GameUpdate(BaseModel):
     developer: Optional[str] = None
     publisher: Optional[str] = None
     region: Optional[str] = None
+    trailer_youtube_id: Optional[str] = None
 
 
 class ScanStatus(BaseModel):
@@ -124,6 +126,7 @@ class IGDBSearchResult(BaseModel):
     rating: Optional[float] = None
     release_date: Optional[int] = None
     genres: Optional[List[str]] = None
+    trailer_youtube_id: Optional[str] = None
 
 
 class BiosFileOut(BaseModel):

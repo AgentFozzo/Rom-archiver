@@ -23,6 +23,7 @@ from dat_parser import (
     extract_revision,
     ROM_EXTENSIONS,
     PLATFORM_DISPLAY_NAMES,
+    EXT_TO_PLATFORM,
 )
 
 logger = logging.getLogger(__name__)
@@ -159,21 +160,6 @@ async def fetch_igdb_metadata(
         logger.warning(f"IGDB search failed for '{title}': {e}")
 
     return None
-
-
-def collect_rom_files(rom_path: str) -> list[str]:
-    """Recursively collect all ROM files from the given path."""
-    files = []
-    for root, dirs, filenames in os.walk(rom_path):
-        # Skip hidden directories
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-        for filename in filenames:
-            if filename.startswith("."):
-                continue
-            ext = Path(filename).suffix.lower()
-            if ext in ALL_ROM_EXTENSIONS:
-                files.append(os.path.join(root, filename))
-    return sorted(files)
 
 
 async def scan_library(
@@ -317,6 +303,7 @@ async def process_rom_file(
             existing_game.developer = igdb_data.get("developer")
             existing_game.publisher = igdb_data.get("publisher")
             existing_game.screenshots = json.dumps(igdb_data.get("screenshots") or [])
+            existing_game.trailer_youtube_id = igdb_data.get("trailer_youtube_id")
         scan_state["updated"] += 1
     else:
         game = models.Game(
@@ -343,6 +330,7 @@ async def process_rom_file(
             game.developer = igdb_data.get("developer")
             game.publisher = igdb_data.get("publisher")
             game.screenshots = json.dumps(igdb_data.get("screenshots") or [])
+            game.trailer_youtube_id = igdb_data.get("trailer_youtube_id")
         db.add(game)
 
     # Flush every 50 games to avoid holding too much in memory
@@ -350,9 +338,88 @@ async def process_rom_file(
         await db.flush()
 
 
-# ─── Library tools ─────────────────────────────────────────────────────────────
+# ─── ZIP extraction ────────────────────────────────────────────────────────────
 
 import zipfile as _zipfile
+
+
+def extract_zip_roms(zip_path: str, dest_dir: str) -> list[str]:
+    """
+    Extract ROM files from a ZIP into per-ROM subfolders under dest_dir.
+
+    Layout:  dest_dir/{rom_stem}/{rom_file}
+
+    Duplicate handling:
+      - If a subfolder with the same stem already exists *and* contains
+        a file with the same name, the new extraction is skipped (existing kept).
+      - Otherwise extraction proceeds normally.
+
+    Returns the list of newly-extracted file paths.
+    Deletes the original ZIP after successful extraction (at least 1 file extracted).
+    """
+    extracted: list[str] = []
+    skipped_dup = 0
+
+    try:
+        with _zipfile.ZipFile(zip_path, "r") as zf:
+            members = [n for n in zf.namelist() if not n.endswith("/")]
+            for member in members:
+                member_path = Path(member)
+                ext = member_path.suffix.lower()
+                if ext not in ALL_ROM_EXTENSIONS:
+                    continue  # skip non-ROM files (readmes, etc.)
+
+                rom_stem = member_path.stem
+                subfolder = os.path.join(dest_dir, rom_stem)
+                dest_file = os.path.join(subfolder, member_path.name)
+
+                # Duplicate check
+                if os.path.exists(dest_file):
+                    skipped_dup += 1
+                    logger.info(f"ZIP extract: skipping duplicate {dest_file}")
+                    continue
+
+                os.makedirs(subfolder, exist_ok=True)
+                with zf.open(member) as src, open(dest_file, "wb") as dst:
+                    dst.write(src.read())
+                extracted.append(dest_file)
+                logger.info(f"ZIP extract: {member} -> {dest_file}")
+
+    except Exception as e:
+        logger.error(f"Failed to extract ZIP {zip_path}: {e}")
+        return []
+
+    if extracted:
+        try:
+            os.remove(zip_path)
+            logger.info(f"ZIP extract: deleted original {zip_path}")
+        except OSError as e:
+            logger.warning(f"Could not delete ZIP {zip_path}: {e}")
+
+    return extracted
+
+
+def collect_rom_files(rom_path: str) -> list[str]:
+    """Recursively collect all ROM files from the given path, extracting ZIPs first."""
+    files = []
+    for root, dirs, filenames in os.walk(rom_path):
+        # Skip hidden directories
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for filename in filenames:
+            if filename.startswith("."):
+                continue
+            ext = Path(filename).suffix.lower()
+            full_path = os.path.join(root, filename)
+            if ext == ".zip":
+                # Extract in-place; replace ZIP entries with extracted ROM paths
+                extracted = extract_zip_roms(full_path, root)
+                files.extend(extracted)
+            elif ext in ALL_ROM_EXTENSIONS:
+                files.append(full_path)
+    return sorted(files)
+
+
+# ─── Library tools ─────────────────────────────────────────────────────────────
 
 reorganize_state = {
     "running": False,

@@ -95,7 +95,7 @@ async def search_game(
         f'search "{query}";'
         f"fields id,name,summary,cover.image_id,first_release_date,rating,"
         f"genres.name,involved_companies.company.name,involved_companies.developer,"
-        f"involved_companies.publisher,screenshots.image_id;"
+        f"involved_companies.publisher,screenshots.image_id,videos.video_id;"
         f"where version_parent = null{platform_filter};"
         f"limit {limit};"
     )
@@ -126,6 +126,12 @@ async def search_game(
 
         genres = [g["name"] for g in r.get("genres", []) if g.get("name")]
 
+        trailer_youtube_id = None
+        for v in r.get("videos", []):
+            if v.get("video_id"):
+                trailer_youtube_id = v["video_id"]
+                break
+
         games.append({
             "igdb_id": r["id"],
             "title": r["name"],
@@ -137,6 +143,7 @@ async def search_game(
             "developer": developer,
             "publisher": publisher,
             "screenshots": screenshots,
+            "trailer_youtube_id": trailer_youtube_id,
         })
 
     return games
@@ -150,7 +157,7 @@ async def get_game_by_id(
     igdb_query = (
         f"fields id,name,summary,cover.image_id,first_release_date,rating,"
         f"genres.name,involved_companies.company.name,involved_companies.developer,"
-        f"involved_companies.publisher,screenshots.image_id;"
+        f"involved_companies.publisher,screenshots.image_id,videos.video_id;"
         f"where id = {igdb_id};"
         f"limit 1;"
     )
@@ -180,6 +187,12 @@ async def get_game_by_id(
 
     genres = [g["name"] for g in r.get("genres", []) if g.get("name")]
 
+    trailer_youtube_id = None
+    for v in r.get("videos", []):
+        if v.get("video_id"):
+            trailer_youtube_id = v["video_id"]
+            break
+
     return {
         "igdb_id": r["id"],
         "title": r["name"],
@@ -191,6 +204,7 @@ async def get_game_by_id(
         "developer": developer,
         "publisher": publisher,
         "screenshots": screenshots,
+        "trailer_youtube_id": trailer_youtube_id,
     }
 
 

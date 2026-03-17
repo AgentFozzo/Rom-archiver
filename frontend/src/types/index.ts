@@ -32,6 +32,7 @@ export interface Game {
   dat_verified: boolean
   dat_title?: string
   is_favorite?: boolean
+  trailer_youtube_id?: string
   created_at?: string
 }
 
@@ -83,6 +84,7 @@ export interface IGDBSearchResult {
   rating?: number
   release_date?: number
   genres?: string[]
+  trailer_youtube_id?: string
 }
 
 export type ExtraType = 'mod' | 'update' | 'dlc' | 'cheat' | 'other'

@@ -92,6 +92,7 @@ export default function GameDetailPage() {
       rating: result.rating || undefined,
       release_date: result.release_date || undefined,
       genres: result.genres || [],
+      trailer_youtube_id: result.trailer_youtube_id || undefined,
     })
     qc.invalidateQueries({ queryKey: ['game', id] })
     qc.invalidateQueries({ queryKey: ['games'] })
@@ -160,7 +161,9 @@ export default function GameDetailPage() {
             <div className="flex-shrink-0 w-56">
               <div className="relative rounded-lg overflow-hidden shadow-card">
                 {game.cover_url ? (
-                  <img src={game.cover_url} alt={game.title} className="w-full" />
+                  <div className="aspect-[3/4] bg-black">
+                    <img src={game.cover_url} alt={game.title} className="w-full h-full object-contain" />
+                  </div>
                 ) : (
                   <div className="aspect-[3/4] bg-steam-card flex items-center justify-center">
                     <span className="text-5xl opacity-20">🎮</span>
@@ -319,6 +322,22 @@ export default function GameDetailPage() {
                       <span className="text-steam-text">{game.publisher}</span>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Trailer */}
+              {game.trailer_youtube_id && (
+                <div className="mb-5">
+                  <p className="text-steam-dim text-[10px] uppercase tracking-wider mb-2">Trailer</p>
+                  <div className="relative aspect-video rounded-lg overflow-hidden bg-black">
+                    <iframe
+                      src={`https://www.youtube-nocookie.com/embed/${game.trailer_youtube_id}?rel=0&modestbranding=1`}
+                      title="Game Trailer"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      className="absolute inset-0 w-full h-full"
+                    />
+                  </div>
                 </div>
               )}
 

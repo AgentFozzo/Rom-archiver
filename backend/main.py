@@ -189,6 +189,7 @@ def _serialize_game(game: models.Game) -> schemas.GameOut:
         dat_verified=game.dat_verified,
         dat_title=game.dat_title,
         is_favorite=game.is_favorite or False,
+        trailer_youtube_id=game.trailer_youtube_id,
         created_at=game.created_at,
         platform=platform,
     )
@@ -409,6 +410,7 @@ async def batch_game_action(
                             game.developer = igdb_data.get("developer")
                             game.publisher = igdb_data.get("publisher")
                             game.screenshots = _json.dumps(igdb_data.get("screenshots") or [])
+                            game.trailer_youtube_id = igdb_data.get("trailer_youtube_id")
                             game.title = igdb_data.get("title") or game.title
                     except Exception as e:
                         logger.warning(f"Batch refresh failed for game {gid}: {e}")
@@ -551,6 +553,7 @@ async def refresh_game_metadata(game_id: int, db: AsyncSession = Depends(get_db)
         game.developer = igdb_data.get("developer")
         game.publisher = igdb_data.get("publisher")
         game.screenshots = json.dumps(igdb_data.get("screenshots") or [])
+        game.trailer_youtube_id = igdb_data.get("trailer_youtube_id")
         game.title = igdb_data.get("title") or game.title
         await db.commit()
         await db.refresh(game)
