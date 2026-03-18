@@ -14,7 +14,7 @@ interface SidebarProps {
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation()
-  const navigate = useNavigate()
+
   const { gameId } = useParams()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
