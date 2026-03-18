@@ -166,6 +166,16 @@ class GameExtraOut(BaseModel):
         from_attributes = True
 
 
+class VerifyStatus(BaseModel):
+    running: bool
+    progress: int
+    total: int
+    current_file: str
+    verified: int
+    unverified: int
+    errors: int
+
+
 class ReorganizeDetail(BaseModel):
     game_id: int
     title: str

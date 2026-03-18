@@ -6,12 +6,13 @@ import {
   startReorganize, getReorganizeStatus,
   getLibraryIntegrity, removeMissingGames,
   getLibraryDuplicates, autoCleanDuplicates, cleanupTempDownloads, cleanupEmptyFolders,
+  startVerify, getVerifyStatus,
 } from '../api/client'
 import type { Settings } from '../types'
 import {
   Save, Upload, Trash2, RefreshCw, CheckCircle, AlertCircle,
   Eye, EyeOff, Loader2, ExternalLink, Database, ArrowLeft, FileCheck,
-  FolderSync, ShieldAlert, Copy, Folder, Wrench, Link2, ChevronDown,
+  FolderSync, ShieldAlert, ShieldCheck, Copy, Folder, Wrench, Link2, ChevronDown,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
@@ -460,6 +461,29 @@ function LibraryToolsSection() {
     },
   })
 
+  // ── Verify ──
+  const [verifyDone, setVerifyDone] = useState(false)
+  const { data: verifyStatus, refetch: refetchVerify } = useQuery({
+    queryKey: ['verify-status'],
+    queryFn: getVerifyStatus,
+    refetchInterval: (q) => q.state.data?.running ? 1200 : false,
+  })
+
+  const startVerifyMutation = useMutation({
+    mutationFn: startVerify,
+    onSuccess: () => {
+      setVerifyDone(false)
+      refetchVerify()
+    },
+  })
+
+  useEffect(() => {
+    if (verifyStatus && !verifyStatus.running && verifyStatus.total > 0) {
+      setVerifyDone(true)
+      qc.invalidateQueries({ queryKey: ['games'] })
+    }
+  }, [verifyStatus?.running])
+
   // ── Duplicates ──
   const [dupResult, setDupResult] = useState<
     { match_type: string; crc32: string | null; games: import('../types').Game[] }[] | null
@@ -745,6 +769,64 @@ function LibraryToolsSection() {
                   ))}
                 </div>
               </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-steam-border/50 pt-3 space-y-2">
+        {/* Verify Games */}
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-steam-text text-xs font-medium flex items-center gap-1.5">
+              <ShieldCheck size={12} className="text-steam-verified" /> Verify Games
+            </p>
+            <p className="text-steam-dim text-[10px] mt-0.5">
+              Re-hashes every ROM and matches against imported DAT files to update verification status.
+            </p>
+          </div>
+          <button
+            onClick={() => startVerifyMutation.mutate()}
+            disabled={verifyStatus?.running ?? false}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-steam-blue text-white px-3 py-1.5
+                       rounded text-xs font-medium hover:bg-blue-500 disabled:opacity-50
+                       transition-all active:scale-95"
+          >
+            <ShieldCheck size={11} className={clsx((verifyStatus?.running) && 'animate-pulse')} />
+            {verifyStatus?.running ? 'Verifying...' : 'Verify'}
+          </button>
+        </div>
+
+        {((verifyStatus?.running) || verifyDone) && verifyStatus && verifyStatus.total > 0 && (
+          <div className="bg-steam-bg-deep border border-steam-border rounded-lg p-3 space-y-2 animate-fade-in">
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className={clsx(
+                  'font-medium flex items-center gap-1',
+                  verifyStatus.running ? 'text-steam-blue' : 'text-steam-verified'
+                )}>
+                  {verifyStatus.running
+                    ? <><Loader2 size={11} className="animate-spin" /> Hashing files... {verifyStatus.progress}/{verifyStatus.total}</>
+                    : <><CheckCircle size={11} /> Done</>
+                  }
+                </span>
+                <span className="text-steam-dim">
+                  {verifyStatus.verified} verified · {verifyStatus.unverified} unmatched · {verifyStatus.errors} errors
+                </span>
+              </div>
+              <div className="h-1.5 bg-steam-border rounded-full overflow-hidden">
+                <div
+                  className={clsx('h-full rounded-full transition-all',
+                    verifyStatus.running ? 'bg-steam-blue' : 'bg-steam-verified'
+                  )}
+                  style={{ width: `${verifyStatus.total ? Math.round((verifyStatus.progress / verifyStatus.total) * 100) : 0}%` }}
+                />
+              </div>
+            </div>
+            {verifyStatus.running && (
+              <p className="text-steam-dim text-[10px] truncate">
+                {verifyStatus.current_file}
+              </p>
             )}
           </div>
         )}

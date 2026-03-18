@@ -21,6 +21,7 @@ from scanner import (
     scan_library, get_scan_status, fetch_igdb_metadata, process_rom_file,
     reorganize_library, get_reorganize_status,
     check_library_integrity, find_duplicate_games,
+    verify_games, get_verify_status,
 )
 from dat_parser import DatParser, PLATFORM_DISPLAY_NAMES
 from downloader import process_download, active_downloads, EXTRA_SUBDIRS
@@ -751,6 +752,26 @@ async def auto_clean_duplicates(db: AsyncSession = Depends(get_db)):
 
     await db.commit()
     return {"removed": removed, "freed_bytes": freed_bytes}
+
+
+@app.post("/api/library/verify")
+async def start_verify(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    status = get_verify_status()
+    if status["running"]:
+        raise HTTPException(409, "Verification already running")
+
+    async def _run():
+        from database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await verify_games(session)
+
+    background_tasks.add_task(_run)
+    return {"message": "Verification started"}
+
+
+@app.get("/api/library/verify/status", response_model=schemas.VerifyStatus)
+async def verify_status():
+    return get_verify_status()
 
 
 @app.delete("/api/downloads/temp-cleanup", response_model=schemas.TempCleanupResult)

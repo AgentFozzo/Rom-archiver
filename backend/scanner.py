@@ -577,6 +577,105 @@ def _normalize_title(title: str) -> str:
     return re.sub(r'[^a-z0-9]', '', title.lower())
 
 
+# ─── Verify Games ──────────────────────────────────────────────────────────────
+
+verify_state = {
+    "running": False,
+    "progress": 0,
+    "total": 0,
+    "current_file": "",
+    "verified": 0,
+    "unverified": 0,
+    "errors": 0,
+}
+
+
+def get_verify_status() -> dict:
+    return dict(verify_state)
+
+
+async def verify_games(db):
+    """
+    Re-hash every game in the library and match against imported DAT entries.
+    Updates dat_verified and dat_title for each game.
+    """
+    global verify_state
+
+    if verify_state["running"]:
+        return
+
+    verify_state.update({
+        "running": True,
+        "progress": 0,
+        "total": 0,
+        "current_file": "Loading games...",
+        "verified": 0,
+        "unverified": 0,
+        "errors": 0,
+    })
+
+    try:
+        from sqlalchemy.orm import selectinload
+        result = await db.execute(select(models.Game))
+        games = result.scalars().all()
+        verify_state["total"] = len(games)
+
+        rom_path_result = await db.execute(
+            select(models.Setting).where(models.Setting.key == "rom_path")
+        )
+        rom_path_setting = rom_path_result.scalar_one_or_none()
+        rom_path = (rom_path_setting.value if rom_path_setting else None) or "/roms"
+
+        for i, game in enumerate(games):
+            verify_state["progress"] = i + 1
+            verify_state["current_file"] = game.file_name
+
+            full_path = os.path.join(rom_path, game.file_path)
+            if not os.path.isfile(full_path):
+                verify_state["errors"] += 1
+                continue
+
+            try:
+                hashes = await compute_hashes(full_path)
+                if not hashes:
+                    verify_state["errors"] += 1
+                    continue
+
+                crc32 = hashes.get("crc32")
+                md5 = hashes.get("md5")
+                sha1 = hashes.get("sha1")
+
+                dat_entry = await lookup_dat_entry(db, crc32, md5, sha1)
+
+                game.crc32 = crc32
+                game.md5 = md5
+                game.sha1 = sha1
+                game.dat_verified = dat_entry is not None
+                game.dat_title = dat_entry["game_name"] if dat_entry else game.dat_title
+
+                if dat_entry:
+                    verify_state["verified"] += 1
+                else:
+                    verify_state["unverified"] += 1
+
+            except Exception as e:
+                logger.error(f"Verify error for '{game.title}': {e}")
+                verify_state["errors"] += 1
+
+            if (i + 1) % 50 == 0:
+                await db.flush()
+
+        await db.commit()
+
+    finally:
+        verify_state["running"] = False
+        verify_state["current_file"] = "Done"
+        logger.info(
+            f"Verify complete. Verified: {verify_state['verified']}, "
+            f"Unverified: {verify_state['unverified']}, Errors: {verify_state['errors']}"
+        )
+
+
 async def find_duplicate_games(db) -> list:
     """
     Return groups of duplicate games using two strategies:

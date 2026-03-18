@@ -217,3 +217,12 @@ export const cleanupTempDownloads = () =>
 
 export const cleanupEmptyFolders = () =>
   request<{ removed: number; folders: string[] }>('/library/empty-folders', { method: 'DELETE' })
+
+export const startVerify = () =>
+  request<{ message: string }>('/library/verify', { method: 'POST' })
+
+export const getVerifyStatus = () =>
+  request<{
+    running: boolean; progress: number; total: number; current_file: string
+    verified: number; unverified: number; errors: number
+  }>('/library/verify/status')
