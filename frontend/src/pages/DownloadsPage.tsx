@@ -102,8 +102,8 @@ export default function DownloadsPage() {
   const errored = downloads.filter(d => d.status === 'error')
 
   return (
-    <div className="px-6 py-6 max-w-4xl animate-fade-in">
-      <h1 className="text-sm font-bold text-steam-text uppercase tracking-wider mb-6">
+    <div className="px-4 sm:px-6 py-4 sm:py-6 max-w-4xl animate-fade-in">
+      <h1 className="text-sm font-bold text-steam-text uppercase tracking-wider mb-4 sm:mb-6">
         ROM Download Manager
       </h1>
 
@@ -119,7 +119,7 @@ export default function DownloadsPage() {
 
         <form onSubmit={handleSubmit} className="space-y-3">
           {/* URL + File type row */}
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="url"
               value={url}
@@ -139,7 +139,7 @@ export default function DownloadsPage() {
                 setGameSearch('')
               }}
               className="bg-steam-bg-deep border border-steam-border text-steam-muted rounded
-                         px-3 py-2 text-xs focus:outline-none focus:border-steam-blue/50 w-40"
+                         px-3 py-2 text-xs focus:outline-none focus:border-steam-blue/50 sm:w-40"
             >
               {EXTRA_TYPE_OPTIONS.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>

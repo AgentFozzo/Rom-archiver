@@ -130,7 +130,7 @@ export default function SettingsPage() {
   const isScanning = scanStatus?.running ?? false
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-6 animate-fade-in">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6 animate-fade-in">
       <div className="flex items-center gap-3 mb-6">
         <Link to="/" className="text-steam-muted hover:text-white transition-colors">
           <ArrowLeft size={16} />

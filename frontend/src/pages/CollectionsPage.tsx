@@ -48,7 +48,7 @@ export default function CollectionsPage() {
   })
 
   return (
-    <div className="px-6 py-6 animate-fade-in">
+    <div className="px-4 sm:px-6 py-4 sm:py-6 animate-fade-in">
       <h1 className="text-sm font-bold text-steam-text uppercase tracking-wider mb-6">
         Collections
       </h1>

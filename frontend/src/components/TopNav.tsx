@@ -1,10 +1,14 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { startScan, getScanStatus, getStats } from '../api/client'
-import { Gamepad2, RefreshCw, Settings, Loader2 } from 'lucide-react'
+import { Gamepad2, RefreshCw, Settings, Loader2, Menu } from 'lucide-react'
 import clsx from 'clsx'
 
-export default function TopNav() {
+interface TopNavProps {
+  onMenuToggle: () => void
+}
+
+export default function TopNav({ onMenuToggle }: TopNavProps) {
   const location = useLocation()
   const qc = useQueryClient()
 
@@ -41,34 +45,49 @@ export default function TopNav() {
 
   return (
     <header className="bg-steam-bg-deep flex-shrink-0">
-      {/* Primary nav row */}
-      <div className="flex items-center h-9 px-4 gap-1">
+      <div className="flex items-center h-10 px-3 gap-1">
+        {/* Hamburger — mobile only */}
+        <button
+          onClick={onMenuToggle}
+          className="lg:hidden flex items-center justify-center w-8 h-8 rounded
+                     text-steam-muted hover:text-white hover:bg-white/5 transition-colors mr-1"
+          aria-label="Toggle library"
+        >
+          <Menu size={16} />
+        </button>
+
         {/* Logo */}
-        <Link to="/" className="flex items-center gap-2 mr-6 group">
+        <Link to="/" className="flex items-center gap-2 mr-4 group">
           <div className="w-6 h-6 rounded bg-gradient-to-br from-steam-blue to-blue-700
-                          flex items-center justify-center">
+                          flex items-center justify-center flex-shrink-0">
             <Gamepad2 size={14} className="text-white" />
           </div>
-          <span className="text-steam-text text-sm font-bold tracking-wide group-hover:text-white
-                           transition-colors">
+          <span className="hidden sm:block text-steam-text text-sm font-bold tracking-wide
+                           group-hover:text-white transition-colors">
             ROM ARCHIVER
           </span>
         </Link>
 
-        {/* Main nav */}
-        <nav className="flex items-center gap-0.5 h-full">
+        {/* Main nav — hidden on mobile, visible md+ */}
+        <nav className="hidden md:flex items-center gap-0.5 h-full">
           {navItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
               className={clsx(
-                'h-full flex items-center px-3 text-xs font-bold tracking-wider transition-colors relative',
+                'h-full flex items-center px-2.5 lg:px-3 text-xs font-bold tracking-wider transition-colors relative',
                 isActivePath(item.path)
                   ? 'text-white'
                   : 'text-steam-muted hover:text-steam-text'
               )}
             >
-              {item.label}
+              {/* Shorten labels on tablet */}
+              <span className="lg:hidden">
+                {item.label === 'COLLECTIONS' ? 'COLLECT.' :
+                 item.label === 'SYSTEM FILES' ? 'SYS FILES' :
+                 item.label}
+              </span>
+              <span className="hidden lg:block">{item.label}</span>
               {isActivePath(item.path) && (
                 <div className="absolute bottom-0 inset-x-0 h-0.5 bg-steam-blue" />
               )}
@@ -77,20 +96,20 @@ export default function TopNav() {
         </nav>
 
         {/* Right side */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2">
           {/* Scan status */}
           {isScanning && (
-            <div className="flex items-center gap-2 text-xs text-steam-blue">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-steam-blue">
               <Loader2 size={12} className="animate-spin" />
-              <span>
+              <span className="hidden md:block">
                 Scanning {scanStatus?.progress}/{scanStatus?.total}
               </span>
             </div>
           )}
 
-          {/* Game count */}
+          {/* Game count — desktop only */}
           {stats && (
-            <span className="text-steam-dim text-xs">
+            <span className="hidden lg:block text-steam-dim text-xs">
               {stats.total_games} games
             </span>
           )}
@@ -100,7 +119,7 @@ export default function TopNav() {
             onClick={() => scanMutation.mutate()}
             disabled={isScanning}
             className={clsx(
-              'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all',
+              'flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-all',
               isScanning
                 ? 'text-steam-dim cursor-not-allowed'
                 : 'text-steam-muted hover:text-white hover:bg-white/5'
@@ -108,6 +127,7 @@ export default function TopNav() {
             title="Scan ROM library"
           >
             <RefreshCw size={12} className={clsx(isScanning && 'animate-spin')} />
+            <span className="hidden lg:block">Scan</span>
           </button>
 
           {/* Settings */}
@@ -120,6 +140,27 @@ export default function TopNav() {
           </Link>
         </div>
       </div>
+
+      {/* Mobile nav row — shown below header on small screens */}
+      <nav className="md:hidden flex items-center border-t border-steam-border/50 overflow-x-auto no-scrollbar">
+        {navItems.map((item) => (
+          <Link
+            key={item.path}
+            to={item.path}
+            className={clsx(
+              'flex-shrink-0 flex items-center px-4 py-2 text-[11px] font-bold tracking-wider relative',
+              isActivePath(item.path)
+                ? 'text-white'
+                : 'text-steam-muted'
+            )}
+          >
+            {item.label}
+            {isActivePath(item.path) && (
+              <div className="absolute bottom-0 inset-x-0 h-0.5 bg-steam-blue" />
+            )}
+          </Link>
+        ))}
+      </nav>
     </header>
   )
 }

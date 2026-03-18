@@ -67,7 +67,7 @@ export default function GameGrid({ platformId, search, title, favoritesOnly }: P
   }
 
   return (
-    <div className="px-6 py-6">
+    <div className="px-4 sm:px-6 py-4 sm:py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>

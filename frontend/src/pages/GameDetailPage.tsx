@@ -101,10 +101,10 @@ export default function GameDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6 animate-pulse space-y-4">
+      <div className="p-4 sm:p-6 animate-pulse space-y-4">
         <div className="h-6 bg-steam-card rounded w-32" />
-        <div className="flex gap-6">
-          <div className="w-56 aspect-[3/4] bg-steam-card rounded-lg" />
+        <div className="flex flex-col sm:flex-row gap-6">
+          <div className="w-full sm:w-56 max-w-[180px] mx-auto sm:mx-0 aspect-[3/4] bg-steam-card rounded-lg" />
           <div className="flex-1 space-y-3">
             <div className="h-8 bg-steam-card rounded w-2/3" />
             <div className="h-4 bg-steam-card rounded w-1/3" />
@@ -145,7 +145,7 @@ export default function GameDetailPage() {
           </div>
         )}
 
-        <div className="relative px-6 pt-4 pb-6 max-w-5xl">
+        <div className="relative px-4 sm:px-6 pt-4 pb-6 max-w-5xl">
           {/* Back */}
           <button
             onClick={() => navigate(-1)}
@@ -156,9 +156,9 @@ export default function GameDetailPage() {
             Back
           </button>
 
-          <div className="flex gap-6">
+          <div className="flex flex-col sm:flex-row gap-5 sm:gap-6">
             {/* Cover */}
-            <div className="flex-shrink-0 w-56">
+            <div className="flex-shrink-0 w-full sm:w-56 max-w-[200px] mx-auto sm:mx-0">
               <div className="relative rounded-lg overflow-hidden shadow-card">
                 {game.cover_url ? (
                   <div className="aspect-[3/4] bg-black">
@@ -393,7 +393,7 @@ export default function GameDetailPage() {
       </div>
 
       {/* Game Files / Extras section */}
-      <div className="px-6 pb-8 max-w-5xl">
+      <div className="px-4 sm:px-6 pb-8 max-w-5xl">
         <GameExtrasPanel gameId={id} platformSlug={game.platform?.slug} />
       </div>
 
@@ -631,7 +631,7 @@ function GameExtrasPanel({ gameId, platformSlug }: { gameId: number; platformSlu
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-steam-border">
+      <div className="flex border-b border-steam-border overflow-x-auto no-scrollbar">
         {EXTRA_TABS.map(tab => {
           const count = extras.filter(e => e.extra_type === tab.type).length
           return (

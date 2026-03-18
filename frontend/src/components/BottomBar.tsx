@@ -30,19 +30,20 @@ export default function BottomBar() {
   const current = active[0]
 
   return (
-    <div className="h-7 bg-steam-bg-deep border-t border-steam-border flex items-center px-4 gap-4
-                    flex-shrink-0 text-xs">
+    <div className="h-7 bg-steam-bg-deep border-t border-steam-border flex items-center px-3 gap-2
+                    flex-shrink-0 text-xs overflow-hidden">
       {/* Active download */}
       {current && (
-        <Link to="/downloads" className="flex items-center gap-2 text-steam-text hover:text-white transition-colors min-w-0 flex-1">
+        <Link to="/downloads" className="flex items-center gap-1.5 text-steam-text hover:text-white
+                                         transition-colors min-w-0 flex-1">
           {current.status === 'downloading' ? (
             <ArrowDown size={12} className="text-steam-blue flex-shrink-0 animate-pulse" />
           ) : (
             <Loader2 size={12} className="text-steam-blue flex-shrink-0 animate-spin" />
           )}
-          <span className="truncate text-steam-muted">
+          <span className="truncate text-steam-muted text-[11px]">
             {current.status === 'downloading'
-              ? `Downloading: ${current.filename || 'ROM'}`
+              ? `${current.filename || 'ROM'}`
               : current.status === 'hashing'
                 ? `Hashing: ${current.filename || 'ROM'}`
                 : current.status === 'moving'
@@ -53,49 +54,53 @@ export default function BottomBar() {
 
           {current.status === 'downloading' && (
             <>
-              <div className="w-32 h-1 bg-steam-border rounded-full overflow-hidden flex-shrink-0">
+              <div className="w-16 sm:w-32 h-1 bg-steam-border rounded-full overflow-hidden flex-shrink-0">
                 <div
                   className="h-full bg-steam-blue rounded-full transition-all duration-300"
                   style={{ width: `${current.progress}%` }}
                 />
               </div>
-              <span className="text-steam-blue flex-shrink-0">
+              <span className="text-steam-blue flex-shrink-0 text-[11px]">
                 {Math.round(current.progress)}%
               </span>
               {current.speed_bps > 0 && (
-                <span className="text-steam-dim flex-shrink-0">{formatSpeed(current.speed_bps)}</span>
+                <span className="hidden sm:block text-steam-dim flex-shrink-0">
+                  {formatSpeed(current.speed_bps)}
+                </span>
               )}
             </>
           )}
         </Link>
       )}
 
-      {/* No active download - show summary */}
+      {/* No active download */}
       {!current && (
-        <div className="flex items-center gap-2 text-steam-dim flex-1">
+        <div className="flex items-center gap-1.5 text-steam-dim flex-1">
           <Download size={12} />
-          <span>No active downloads</span>
+          <span className="hidden sm:block">No active downloads</span>
         </div>
       )}
 
       {/* Queue count */}
       {active.length > 1 && (
-        <span className="text-steam-dim flex-shrink-0">{active.length} in queue</span>
+        <span className="text-steam-dim flex-shrink-0 text-[11px]">+{active.length - 1}</span>
       )}
 
-      {/* Completed count */}
+      {/* Completed */}
       {completed.length > 0 && (
-        <Link to="/downloads" className="flex items-center gap-1 text-steam-verified hover:text-green-400 transition-colors flex-shrink-0">
+        <Link to="/downloads" className="flex items-center gap-1 text-steam-verified
+                                         hover:text-green-400 transition-colors flex-shrink-0">
           <CheckCircle size={11} />
-          <span>{completed.length} done</span>
+          <span className="text-[11px]">{completed.length}</span>
         </Link>
       )}
 
-      {/* Error count */}
+      {/* Errors */}
       {errors.length > 0 && (
-        <Link to="/downloads" className="flex items-center gap-1 text-steam-danger hover:text-red-400 transition-colors flex-shrink-0">
+        <Link to="/downloads" className="flex items-center gap-1 text-steam-danger
+                                         hover:text-red-400 transition-colors flex-shrink-0">
           <AlertCircle size={11} />
-          <span>{errors.length} failed</span>
+          <span className="text-[11px]">{errors.length}</span>
         </Link>
       )}
     </div>

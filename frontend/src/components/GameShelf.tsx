@@ -29,12 +29,12 @@ export default function GameShelf({ title, games, large, headerExtra }: Props) {
   return (
     <div className="mb-8 group/shelf">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3 px-6">
+      <div className="flex items-center justify-between mb-3 px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-bold text-steam-text uppercase tracking-wider">{title}</h2>
           {headerExtra}
         </div>
-        <div className="flex gap-1 opacity-0 group-hover/shelf:opacity-100 transition-opacity">
+        <div className="flex gap-1 opacity-100 sm:opacity-0 group-hover/shelf:opacity-100 transition-opacity">
           <button
             onClick={() => scroll('left')}
             className="p-1 rounded bg-white/5 hover:bg-white/10 text-steam-muted hover:text-white transition-colors"
@@ -50,11 +50,10 @@ export default function GameShelf({ title, games, large, headerExtra }: Props) {
         </div>
       </div>
 
-
       {/* Scroll container */}
       <div
         ref={scrollRef}
-        className="flex gap-2 overflow-x-auto no-scrollbar px-6 scroll-smooth"
+        className="flex gap-2 overflow-x-auto no-scrollbar px-4 sm:px-6 scroll-smooth"
       >
         {games.map((game, i) => (
           <ShelfCard key={game.id} game={game} large={large && i === 0} />
@@ -71,7 +70,7 @@ function ShelfCard({ game, large }: { game: Game; large?: boolean }) {
       className={clsx(
         'flex-shrink-0 rounded-lg overflow-hidden relative group cursor-pointer',
         'transition-all duration-200 hover:-translate-y-0.5',
-        large ? 'w-72 h-40' : 'w-36 h-48'
+        large ? 'w-56 sm:w-72 h-32 sm:h-40' : 'w-28 sm:w-36 h-40 sm:h-48'
       )}
     >
       {/* Cover image */}

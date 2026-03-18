@@ -75,8 +75,8 @@ export default function Library() {
     <div className="animate-fade-in pb-8">
       {/* Hero stats bar */}
       {stats && stats.total_games > 0 && (
-        <div className="px-6 pt-6 pb-4">
-          <div className="flex items-center gap-6">
+        <div className="px-4 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-6">
             <StatPill icon={<Gamepad2 size={13} />} value={stats.total_games} label="Games" color="text-steam-blue" />
             <StatPill icon={<Database size={13} />} value={stats.total_platforms} label="Platforms" color="text-purple-400" />
             <StatPill icon={<ShieldCheck size={13} />} value={stats.verified_games} label="Verified" color="text-steam-verified" />

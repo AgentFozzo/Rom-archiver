@@ -107,7 +107,7 @@ export default function SystemFilesPage() {
   }
 
   return (
-    <div className="px-6 py-6 max-w-4xl animate-fade-in">
+    <div className="px-4 sm:px-6 py-4 sm:py-6 max-w-4xl animate-fade-in">
       <div className="flex items-center gap-3 mb-1">
         <Cpu size={18} className="text-steam-blue" />
         <h1 className="text-sm font-bold text-steam-text uppercase tracking-wider">
