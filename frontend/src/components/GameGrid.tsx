@@ -4,9 +4,11 @@ import { getGames, batchGames, getPlatformOptions } from '../api/client'
 import GameCard from './GameCard'
 import { ChevronLeft, ChevronRight, CheckSquare, Trash2, RefreshCw, HardDrive, X, Star } from 'lucide-react'
 import clsx from 'clsx'
+import { getPlatformLogoUrl } from '../utils/platformLogos'
 
 interface Props {
   platformId?: number
+  platformSlug?: string
   search?: string
   title?: string
   favoritesOnly?: boolean
@@ -14,7 +16,7 @@ interface Props {
 
 type SortKey = 'title' | 'rating' | 'release_date' | 'file_size'
 
-export default function GameGrid({ platformId, search, title, favoritesOnly }: Props) {
+export default function GameGrid({ platformId, platformSlug, search, title, favoritesOnly }: Props) {
   const [page, setPage] = useState(1)
   const [sort, setSort] = useState<SortKey>('title')
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
@@ -70,7 +72,16 @@ export default function GameGrid({ platformId, search, title, favoritesOnly }: P
     <div className="px-4 sm:px-6 py-4 sm:py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
-        <div>
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Platform brand logo */}
+          {platformSlug && getPlatformLogoUrl(platformSlug) && (
+            <img
+              src={getPlatformLogoUrl(platformSlug)!}
+              alt=""
+              className="w-6 h-6 object-contain opacity-60 flex-shrink-0"
+            />
+          )}
+          <div>
           <h2 className="text-sm font-bold text-steam-text uppercase tracking-wider">
             {title || 'All Games'}
           </h2>
@@ -82,6 +93,7 @@ export default function GameGrid({ platformId, search, title, favoritesOnly }: P
               )}
             </p>
           )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

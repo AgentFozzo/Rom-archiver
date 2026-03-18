@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getPlatforms } from '../api/client'
 import type { Platform } from '../types'
+import { getPlatformLogoUrl, getPlatformAccent } from '../utils/platformLogos'
 
 const PLATFORM_COLORS: Record<string, string> = {
   nes: 'from-red-900/40 to-red-950/40',
@@ -76,25 +77,51 @@ export default function CollectionsPage() {
 
 function PlatformCard({ platform }: { platform: Platform }) {
   const gradient = PLATFORM_COLORS[platform.slug] || 'from-steam-card to-steam-surface'
+  const logoUrl = getPlatformLogoUrl(platform.slug)
+  const accent = getPlatformAccent(platform.slug)
 
   return (
-    <Link
-      to={`/platform/${platform.id}`}
-      className="block group"
-    >
+    <Link to={`/platform/${platform.id}`} className="block group">
       <div className={`bg-gradient-to-br ${gradient} border border-steam-border rounded-lg
-                       p-5 transition-all duration-200 hover:border-steam-blue/40 hover:-translate-y-0.5
-                       hover:shadow-card`}>
+                       p-4 sm:p-5 transition-all duration-200 hover:border-steam-blue/40
+                       hover:-translate-y-0.5 hover:shadow-card`}>
         <div className="flex items-center justify-between mb-3">
-          {platform.cover_url ? (
-            <img src={platform.cover_url} alt="" className="w-8 h-8 object-contain opacity-60
-                     group-hover:opacity-100 transition-opacity" />
-          ) : (
-            <span className="text-2xl opacity-40 group-hover:opacity-70 transition-opacity">🎮</span>
-          )}
-          <span className="text-steam-blue text-lg font-bold">{platform.game_count}</span>
+          {/* Brand logo with fallback */}
+          <div className="w-9 h-9 flex items-center justify-center">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={platform.name}
+                className="w-8 h-8 object-contain opacity-50 group-hover:opacity-90
+                           transition-opacity duration-200"
+                onError={(e) => {
+                  // Fallback to platform cover or emoji on load error
+                  const target = e.currentTarget
+                  if (platform.cover_url) {
+                    target.src = platform.cover_url
+                  } else {
+                    target.style.display = 'none'
+                    const parent = target.parentElement
+                    if (parent) {
+                      const fb = document.createElement('span')
+                      fb.className = 'text-2xl opacity-40 group-hover:opacity-70'
+                      fb.textContent = '🎮'
+                      parent.appendChild(fb)
+                    }
+                  }
+                }}
+              />
+            ) : platform.cover_url ? (
+              <img src={platform.cover_url} alt="" className="w-8 h-8 object-contain opacity-60
+                       group-hover:opacity-100 transition-opacity" />
+            ) : (
+              <span className="text-2xl opacity-40 group-hover:opacity-70 transition-opacity">🎮</span>
+            )}
+          </div>
+
+          <span className={`text-lg font-bold ${accent}`}>{platform.game_count}</span>
         </div>
-        <h3 className="text-steam-text text-sm font-semibold group-hover:text-white transition-colors">
+        <h3 className="text-steam-text text-sm font-semibold group-hover:text-white transition-colors leading-tight">
           {platform.name}
         </h3>
         <p className="text-steam-dim text-xs mt-0.5">
@@ -104,3 +131,4 @@ function PlatformCard({ platform }: { platform: Platform }) {
     </Link>
   )
 }
+

@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getPlatforms, getGames, deletePlatform } from '../api/client'
 import { Search, ChevronDown, ChevronRight, Trash2, X } from 'lucide-react'
 import clsx from 'clsx'
 import type { Game } from '../types'
+import { getPlatformLogoUrl } from '../utils/platformLogos'
 
 interface SidebarProps {
   open: boolean
@@ -137,6 +138,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                       ? <ChevronDown size={10} className="flex-shrink-0" />
                       : <ChevronRight size={10} className="flex-shrink-0" />
                     }
+                    {/* Brand logo */}
+                    {getPlatformLogoUrl(platform.slug) ? (
+                      <img
+                        src={getPlatformLogoUrl(platform.slug)!}
+                        alt=""
+                        className="w-3 h-3 object-contain opacity-50 flex-shrink-0"
+                      />
+                    ) : null}
                     <span className="truncate">{platform.name}</span>
                     <span className="ml-auto text-steam-dim font-normal flex-shrink-0">
                       ({platformGames.length})

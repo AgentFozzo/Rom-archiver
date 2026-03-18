@@ -15,7 +15,7 @@ export default function PlatformPage() {
 
   return (
     <div className="animate-fade-in">
-      <GameGrid platformId={id} title={platform?.name} />
+      <GameGrid platformId={id} platformSlug={platform?.slug} title={platform?.name} />
     </div>
   )
 }
