@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import DeclarativeBase
 
 DATA_PATH = os.getenv("DATA_PATH", "/data")
+os.makedirs(DATA_PATH, exist_ok=True)
 DATABASE_URL = f"sqlite+aiosqlite:///{DATA_PATH}/romarchiver.db"
 
 

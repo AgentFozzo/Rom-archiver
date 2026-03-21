@@ -88,19 +88,30 @@ async def startup():
     os.makedirs(f"{DATA_PATH}/dats", exist_ok=True)
     await init_db()
 
-    # Seed default settings if missing
+    # Seed / sync settings from env vars and defaults
     from database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
-        for key, value in [
+        # For env-var-backed keys: upsert so docker env vars always win
+        for key, env_value in [
             ("igdb_client_id", IGDB_CLIENT_ID),
             ("igdb_client_secret", IGDB_CLIENT_SECRET),
             ("rom_path", ROM_PATH),
+        ]:
+            result = await db.execute(select(models.Setting).where(models.Setting.key == key))
+            existing = result.scalar_one_or_none()
+            if existing is None:
+                db.add(models.Setting(key=key, value=env_value))
+            elif env_value:  # env var is explicitly set → keep it in sync
+                existing.value = env_value
+
+        # UI-only settings: only seed if missing, never overwrite
+        for key, default in [
             ("auto_scan_on_start", "false"),
             ("download_images", "true"),
         ]:
             result = await db.execute(select(models.Setting).where(models.Setting.key == key))
             if not result.scalar_one_or_none():
-                db.add(models.Setting(key=key, value=value))
+                db.add(models.Setting(key=key, value=default))
         await db.commit()
 
         result = await db.execute(select(models.Setting).where(models.Setting.key == "auto_scan_on_start"))
