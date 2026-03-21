@@ -1368,7 +1368,7 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(STATIC_DIR):
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
-    @app.get("/{full_path:path}")
+    @app.get("/{full_path:path}", dependencies=[])
     async def serve_frontend(full_path: str):
         index = os.path.join(STATIC_DIR, "index.html")
         return FileResponse(index)
