@@ -138,3 +138,13 @@ class Setting(Base):
 
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=True)
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, unique=True, nullable=False)
+    firebase_uid = Column(String, unique=True, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())

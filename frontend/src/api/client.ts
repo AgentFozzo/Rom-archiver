@@ -233,3 +233,18 @@ export const getVerifyStatus = () =>
     running: boolean; progress: number; total: number; current_file: string
     verified: number; unverified: number; errors: number
   }>('/library/verify/status')
+
+// User management
+export interface UserProfile { id: number; username: string; email: string }
+
+export const getUsers = () => request<UserProfile[]>('/admin/users')
+
+export const createUser = (username: string, email: string, password: string) =>
+  request<{ ok: boolean; username: string }>('/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, email, password }),
+  })
+
+export const deleteUser = (username: string) =>
+  request<{ ok: boolean }>(`/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' })

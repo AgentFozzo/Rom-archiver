@@ -7,12 +7,13 @@ import {
   getLibraryIntegrity, removeMissingGames,
   getLibraryDuplicates, autoCleanDuplicates, cleanupTempDownloads, cleanupEmptyFolders,
   startVerify, getVerifyStatus,
+  getUsers, createUser, deleteUser,
 } from '../api/client'
 import type { Settings } from '../types'
 import {
   Save, Upload, Trash2, RefreshCw, CheckCircle, AlertCircle,
   Eye, EyeOff, Loader2, ExternalLink, Database, ArrowLeft, FileCheck,
-  FolderSync, ShieldAlert, ShieldCheck, Copy, Folder, Wrench, Link2, ChevronDown,
+  FolderSync, ShieldAlert, ShieldCheck, Copy, Folder, Wrench, Link2, ChevronDown, UserPlus, Users,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
@@ -22,6 +23,109 @@ function formatBytes(bytes: number): string {
   const k = 1024, s = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${s[i]}`
+}
+
+function UsersSection() {
+  const qc = useQueryClient()
+  const [newUsername, setNewUsername] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [msg, setMsg] = useState('')
+
+  const { data: users = [], isLoading } = useQuery({ queryKey: ['users'], queryFn: getUsers })
+
+  const createMutation = useMutation({
+    mutationFn: () => createUser(newUsername.trim(), newEmail.trim(), newPassword),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      setNewUsername('')
+      setNewEmail('')
+      setNewPassword('')
+      setMsg('User created!')
+      setTimeout(() => setMsg(''), 3000)
+    },
+    onError: (e: Error) => {
+      setMsg(e.message)
+      setTimeout(() => setMsg(''), 5000)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  })
+
+  return (
+    <Section title="Users">
+      <div className="space-y-4">
+        {/* Existing users */}
+        <div className="space-y-2">
+          {isLoading && <p className="text-steam-dim text-xs">Loading...</p>}
+          {users.map(u => (
+            <div key={u.id} className="flex items-center justify-between bg-steam-bg-deep border border-steam-border rounded-lg px-3 py-2">
+              <div>
+                <p className="text-steam-text text-xs font-medium flex items-center gap-1.5">
+                  <Users size={11} className="text-steam-blue" /> {u.username}
+                </p>
+                <p className="text-steam-dim text-[10px]">{u.email}</p>
+              </div>
+              <button
+                onClick={() => deleteMutation.mutate(u.username)}
+                className="text-steam-muted hover:text-red-400 transition-colors p-1"
+                title="Delete user"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+          {!isLoading && users.length === 0 && (
+            <p className="text-steam-dim text-xs">No users yet. Create one below.</p>
+          )}
+        </div>
+
+        {/* Create user */}
+        <div className="border-t border-steam-border pt-4 space-y-2">
+          <p className="text-steam-text text-xs font-medium flex items-center gap-1.5">
+            <UserPlus size={12} /> Add user
+          </p>
+          <input
+            type="text"
+            placeholder="Username (e.g. Bee)"
+            value={newUsername}
+            onChange={e => setNewUsername(e.target.value)}
+            className="w-full bg-steam-bg-deep border border-steam-border text-steam-text rounded px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-steam-blue"
+          />
+          <input
+            type="email"
+            placeholder="Email"
+            value={newEmail}
+            onChange={e => setNewEmail(e.target.value)}
+            className="w-full bg-steam-bg-deep border border-steam-border text-steam-text rounded px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-steam-blue"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={newPassword}
+            onChange={e => setNewPassword(e.target.value)}
+            className="w-full bg-steam-bg-deep border border-steam-border text-steam-text rounded px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-steam-blue"
+          />
+          {msg && (
+            <p className={clsx('text-xs px-2 py-1 rounded', msg.includes('created') ? 'text-green-400' : 'text-red-400')}>
+              {msg}
+            </p>
+          )}
+          <button
+            onClick={() => createMutation.mutate()}
+            disabled={createMutation.isPending || !newUsername || !newEmail || !newPassword}
+            className="flex items-center gap-1.5 bg-steam-blue text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-blue-500 disabled:opacity-50 transition-all"
+          >
+            <UserPlus size={11} />
+            {createMutation.isPending ? 'Creating...' : 'Create user'}
+          </button>
+        </div>
+      </div>
+    </Section>
+  )
 }
 
 export default function SettingsPage() {
@@ -832,5 +936,7 @@ function LibraryToolsSection() {
         )}
       </div>
     </Section>
+
+    <UsersSection />
   )
 }

@@ -50,10 +50,16 @@ else:
     logger.warning("FIREBASE_CREDENTIALS not set or file not found — API auth disabled (dev mode)")
 
 
+_PUBLIC_PATHS = {"/api/health"}
+_PUBLIC_PREFIXES = ["/api/auth/"]
+
+
 class FirebaseAuthMiddleware(BaseHTTPMiddleware):
-    """Protects all /api/ routes except /api/health with Firebase token verification."""
+    """Protects all /api/ routes except public ones with Firebase token verification."""
     async def dispatch(self, request: Request, call_next):
-        if _firebase_enabled and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        path = request.url.path
+        is_public = path in _PUBLIC_PATHS or any(path.startswith(p) for p in _PUBLIC_PREFIXES)
+        if _firebase_enabled and path.startswith("/api/") and not is_public:
             authorization = request.headers.get("Authorization", "")
             if not authorization.startswith("Bearer "):
                 return JSONResponse({"detail": "Missing or invalid Authorization header"}, status_code=401)
@@ -125,6 +131,62 @@ async def get_igdb_creds(db: AsyncSession) -> tuple[str, str]:
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+# ─── Auth helpers (public — no token required) ──────────────────────────────
+
+@app.get("/api/auth/lookup/{username}")
+async def lookup_username(username: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.UserProfile).where(models.UserProfile.username == username)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Username not found")
+    return {"email": profile.email}
+
+
+# ─── User management (authenticated) ────────────────────────────────────────
+
+@app.get("/api/admin/users")
+async def list_users(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(models.UserProfile).order_by(models.UserProfile.username))
+    return [{"username": u.username, "email": u.email, "id": u.id} for u in result.scalars()]
+
+
+@app.post("/api/admin/users")
+async def create_user(data: dict, db: AsyncSession = Depends(get_db)):
+    username = data.get("username", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+    if not username or not email or not password:
+        raise HTTPException(status_code=400, detail="username, email, and password are required")
+    try:
+        fb_user = firebase_auth.create_user(email=email, password=password, display_name=username)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    profile = models.UserProfile(username=username, email=email, firebase_uid=fb_user.uid)
+    db.add(profile)
+    await db.commit()
+    return {"ok": True, "username": username}
+
+
+@app.delete("/api/admin/users/{username}")
+async def delete_user(username: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.UserProfile).where(models.UserProfile.username == username)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+    if profile.firebase_uid:
+        try:
+            firebase_auth.delete_user(profile.firebase_uid)
+        except Exception:
+            pass
+    await db.delete(profile)
+    await db.commit()
+    return {"ok": True}
 
 
 # ─── Platforms ─────────────────────────────────────────────────────────────────
