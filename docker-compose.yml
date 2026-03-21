@@ -15,6 +15,7 @@ services:
       - ROM_PATH=/roms
       - DATA_PATH=/data
       - TZ=${TZ:-America/New_York}
+      - FIREBASE_CREDENTIALS=/data/firebase-credentials.json
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8096/api/health"]

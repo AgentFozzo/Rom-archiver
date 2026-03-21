@@ -36,19 +36,22 @@ ROM_PATH = os.getenv("ROM_PATH", "/roms")
 DATA_PATH = os.getenv("DATA_PATH", "/data")
 IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "")
 IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "")
-FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
+FIREBASE_CREDENTIALS = os.getenv("FIREBASE_CREDENTIALS", "")
 
-# Initialize Firebase Admin (no service account needed for token verification)
-if FIREBASE_PROJECT_ID:
-    firebase_admin.initialize_app(options={"projectId": FIREBASE_PROJECT_ID})
-    logger.info(f"Firebase auth enabled for project: {FIREBASE_PROJECT_ID}")
+# Initialize Firebase Admin using service account JSON file
+_firebase_enabled = False
+if FIREBASE_CREDENTIALS and os.path.exists(FIREBASE_CREDENTIALS):
+    cred = credentials.Certificate(FIREBASE_CREDENTIALS)
+    firebase_admin.initialize_app(cred)
+    _firebase_enabled = True
+    logger.info(f"Firebase auth enabled via credentials: {FIREBASE_CREDENTIALS}")
 else:
-    logger.warning("FIREBASE_PROJECT_ID not set — API auth disabled (dev mode)")
+    logger.warning("FIREBASE_CREDENTIALS not set or file not found — API auth disabled (dev mode)")
 
 
 async def verify_token(request: Request) -> None:
     """Dependency that verifies a Firebase ID token on every API request."""
-    if not FIREBASE_PROJECT_ID:
+    if not _firebase_enabled:
         return  # Auth disabled in dev mode
     authorization = request.headers.get("Authorization", "")
     if not authorization.startswith("Bearer "):
