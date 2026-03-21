@@ -10,7 +10,8 @@ import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, delete
@@ -49,22 +50,24 @@ else:
     logger.warning("FIREBASE_CREDENTIALS not set or file not found — API auth disabled (dev mode)")
 
 
-async def verify_token(request: Request) -> None:
-    """Dependency that verifies a Firebase ID token on every API request."""
-    if not _firebase_enabled:
-        return  # Auth disabled in dev mode
-    authorization = request.headers.get("Authorization", "")
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-    token = authorization.removeprefix("Bearer ")
-    try:
-        firebase_auth.verify_id_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+class FirebaseAuthMiddleware(BaseHTTPMiddleware):
+    """Protects all /api/ routes except /api/health with Firebase token verification."""
+    async def dispatch(self, request: Request, call_next):
+        if _firebase_enabled and request.url.path.startswith("/api/") and request.url.path != "/api/health":
+            authorization = request.headers.get("Authorization", "")
+            if not authorization.startswith("Bearer "):
+                return JSONResponse({"detail": "Missing or invalid Authorization header"}, status_code=401)
+            token = authorization.removeprefix("Bearer ")
+            try:
+                firebase_auth.verify_id_token(token)
+            except Exception:
+                return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
+        return await call_next(request)
 
 
-app = FastAPI(title="ROM Archiver", version="1.0.0", dependencies=[Depends(verify_token)])
+app = FastAPI(title="ROM Archiver", version="1.0.0")
 
+app.add_middleware(FirebaseAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -119,7 +122,7 @@ async def get_igdb_creds(db: AsyncSession) -> tuple[str, str]:
 
 # ─── Health ────────────────────────────────────────────────────────────────────
 
-@app.get("/api/health", dependencies=[])
+@app.get("/api/health")
 async def health():
     return {"status": "ok"}
 
@@ -1368,7 +1371,7 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(STATIC_DIR):
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
-    @app.get("/{full_path:path}", dependencies=[])
+    @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         index = os.path.join(STATIC_DIR, "index.html")
         return FileResponse(index)
