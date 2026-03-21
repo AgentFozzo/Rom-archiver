@@ -1,8 +1,9 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { startScan, getScanStatus, getStats } from '../api/client'
-import { Gamepad2, RefreshCw, Settings, Loader2, Menu } from 'lucide-react'
+import { Gamepad2, RefreshCw, Settings, Loader2, Menu, LogOut } from 'lucide-react'
 import clsx from 'clsx'
+import { useAuth } from '../context/AuthContext'
 
 interface TopNavProps {
   onMenuToggle: () => void
@@ -11,6 +12,7 @@ interface TopNavProps {
 export default function TopNav({ onMenuToggle }: TopNavProps) {
   const location = useLocation()
   const qc = useQueryClient()
+  const { signOut } = useAuth()
 
   const { data: scanStatus } = useQuery({
     queryKey: ['scan-status'],
@@ -138,6 +140,15 @@ export default function TopNav({ onMenuToggle }: TopNavProps) {
           >
             <Settings size={14} />
           </Link>
+
+          {/* Sign out */}
+          <button
+            onClick={signOut}
+            className="text-steam-muted hover:text-white transition-colors p-1"
+            title="Sign out"
+          >
+            <LogOut size={14} />
+          </button>
         </div>
       </div>
 

@@ -3,11 +3,18 @@ import type {
   Settings, Stats, IGDBSearchResult, Download, PlatformOption,
   BiosFile, BiosPlatformInfo, GameExtra, ExtraType
 } from '../types'
+import { auth } from '../firebase'
 
 const BASE = '/api'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, init)
+  const headers = new Headers((init?.headers as HeadersInit | undefined) ?? {})
+  const user = auth.currentUser
+  if (user) {
+    const token = await user.getIdToken()
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+  const res = await fetch(`${BASE}${path}`, { ...init, headers })
   if (!res.ok) {
     const msg = await res.text().catch(() => res.statusText)
     throw new Error(msg || `HTTP ${res.status}`)

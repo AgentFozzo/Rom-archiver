@@ -6,7 +6,9 @@ import shutil
 from pathlib import Path
 from typing import Optional, List
 
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query
+import firebase_admin
+from firebase_admin import credentials, auth as firebase_auth
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,8 +36,31 @@ ROM_PATH = os.getenv("ROM_PATH", "/roms")
 DATA_PATH = os.getenv("DATA_PATH", "/data")
 IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "")
 IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "")
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 
-app = FastAPI(title="ROM Archiver", version="1.0.0")
+# Initialize Firebase Admin (no service account needed for token verification)
+if FIREBASE_PROJECT_ID:
+    firebase_admin.initialize_app(options={"projectId": FIREBASE_PROJECT_ID})
+    logger.info(f"Firebase auth enabled for project: {FIREBASE_PROJECT_ID}")
+else:
+    logger.warning("FIREBASE_PROJECT_ID not set — API auth disabled (dev mode)")
+
+
+async def verify_token(request: Request) -> None:
+    """Dependency that verifies a Firebase ID token on every API request."""
+    if not FIREBASE_PROJECT_ID:
+        return  # Auth disabled in dev mode
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = authorization.removeprefix("Bearer ")
+    try:
+        firebase_auth.verify_id_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+app = FastAPI(title="ROM Archiver", version="1.0.0", dependencies=[Depends(verify_token)])
 
 app.add_middleware(
     CORSMiddleware,
@@ -91,7 +116,7 @@ async def get_igdb_creds(db: AsyncSession) -> tuple[str, str]:
 
 # ─── Health ────────────────────────────────────────────────────────────────────
 
-@app.get("/api/health")
+@app.get("/api/health", dependencies=[])
 async def health():
     return {"status": "ok"}
 
