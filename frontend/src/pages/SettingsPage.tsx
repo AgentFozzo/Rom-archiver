@@ -464,6 +464,8 @@ export default function SettingsPage() {
           Save Settings
         </button>
       </div>
+
+      <UsersSection />
     </div>
   )
 }
@@ -936,7 +938,5 @@ function LibraryToolsSection() {
         )}
       </div>
     </Section>
-
-    <UsersSection />
   )
 }
