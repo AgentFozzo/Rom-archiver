@@ -64,9 +64,30 @@ export const deleteGame = (id: number) =>
 export const refreshGameMetadata = (id: number) =>
   request<Game>(`/games/${id}/refresh`, { method: 'POST' })
 
-export const downloadGameFile = (id: number) => {
-  window.location.href = `/api/games/${id}/download`
+async function authenticatedDownload(path: string) {
+  const headers = new Headers()
+  const user = auth.currentUser
+  if (user) {
+    const token = await user.getIdToken()
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+  const res = await fetch(`${BASE}${path}`, { headers })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const disposition = res.headers.get('Content-Disposition') ?? ''
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i)
+  const filename = match ? decodeURIComponent(match[1]) : path.split('/').pop() ?? 'download'
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
+
+export const downloadGameFile = (id: number) => authenticatedDownload(`/games/${id}/download`)
 
 // Scanner
 export const startScan = () =>
@@ -144,9 +165,7 @@ export const uploadBiosFiles = (files: File[], platform_slug?: string) => {
   return request<BiosFile[]>(`/bios/upload${qs}`, { method: 'POST', body: form })
 }
 
-export const downloadBiosFile = (id: number) => {
-  window.location.href = `/api/bios/${id}/download`
-}
+export const downloadBiosFile = (id: number) => authenticatedDownload(`/bios/${id}/download`)
 
 export const deleteBiosFile = (id: number) =>
   request<{ ok: boolean }>(`/bios/${id}`, { method: 'DELETE' })
@@ -164,9 +183,8 @@ export const uploadGameExtras = (gameId: number, files: File[], extra_type: Extr
   })
 }
 
-export const downloadGameExtra = (gameId: number, extraId: number) => {
-  window.location.href = `/api/games/${gameId}/extras/${extraId}/download`
-}
+export const downloadGameExtra = (gameId: number, extraId: number) =>
+  authenticatedDownload(`/games/${gameId}/extras/${extraId}/download`)
 
 export const deleteGameExtra = (gameId: number, extraId: number) =>
   request<{ ok: boolean }>(`/games/${gameId}/extras/${extraId}`, { method: 'DELETE' })
