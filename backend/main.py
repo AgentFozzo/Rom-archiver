@@ -52,13 +52,18 @@ else:
 
 _PUBLIC_PATHS = {"/api/health"}
 _PUBLIC_PREFIXES = ["/api/auth/"]
+_PUBLIC_SUFFIXES = ["/download"]
 
 
 class FirebaseAuthMiddleware(BaseHTTPMiddleware):
     """Protects all /api/ routes except public ones with Firebase token verification."""
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        is_public = path in _PUBLIC_PATHS or any(path.startswith(p) for p in _PUBLIC_PREFIXES)
+        is_public = (
+            path in _PUBLIC_PATHS
+            or any(path.startswith(p) for p in _PUBLIC_PREFIXES)
+            or any(path.endswith(s) for s in _PUBLIC_SUFFIXES)
+        )
         if _firebase_enabled and path.startswith("/api/") and not is_public:
             authorization = request.headers.get("Authorization", "")
             if not authorization.startswith("Bearer "):
