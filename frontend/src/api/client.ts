@@ -81,10 +81,13 @@ async function authenticatedDownload(path: string) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  a.style.display = 'none'
   document.body.appendChild(a)
   a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  setTimeout(() => {
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, 10000)
 }
 
 export const downloadGameFile = (id: number) => authenticatedDownload(`/games/${id}/download`)
