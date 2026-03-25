@@ -107,6 +107,9 @@ export const igdbSearch = (q: string, platform_igdb_id?: number) => {
   return request<IGDBSearchResult[]>(`/igdb/search?${qs}`)
 }
 
+export const igdbGetById = (igdbId: number) =>
+  request<IGDBSearchResult>(`/igdb/by-id/${igdbId}`)
+
 // Downloads (ROM Download Manager)
 export const getDownloads = () => request<Download[]>('/downloads')
 

@@ -721,6 +721,18 @@ async def igdb_search(
     return [schemas.IGDBSearchResult(**r) for r in results]
 
 
+@app.get("/api/igdb/by-id/{igdb_id}", response_model=schemas.IGDBSearchResult)
+async def igdb_get_by_id(igdb_id: int, db: AsyncSession = Depends(get_db)):
+    cid, csec = await get_igdb_creds(db)
+    if not cid or not csec:
+        raise HTTPException(400, "IGDB credentials not configured")
+
+    result = await igdb_client.get_game_by_id(cid, csec, igdb_id)
+    if not result:
+        raise HTTPException(404, f"No IGDB game found with ID {igdb_id}")
+    return schemas.IGDBSearchResult(**result)
+
+
 # ─── Scanner ───────────────────────────────────────────────────────────────────
 
 @app.post("/api/scan")

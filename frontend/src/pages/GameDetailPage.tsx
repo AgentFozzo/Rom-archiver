@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  getGame, downloadGameFile, refreshGameMetadata, deleteGame, igdbSearch,
+  getGame, downloadGameFile, refreshGameMetadata, deleteGame, igdbSearch, igdbGetById,
   getGameExtras, uploadGameExtras, downloadGameExtra, deleteGameExtra,
   reassignGamePlatform, getPlatformOptions, toggleFavorite,
 } from '../api/client'
@@ -75,8 +75,19 @@ export default function GameDetailPage() {
     if (!matchSearch.trim()) return
     setMatchLoading(true)
     try {
-      const results = await igdbSearch(matchSearch, game?.platform?.igdb_id)
-      setMatchResults(results)
+      const asId = Number(matchSearch.trim())
+      if (Number.isInteger(asId) && asId > 0) {
+        // Direct IGDB ID lookup
+        try {
+          const result = await igdbGetById(asId)
+          setMatchResults([result])
+        } catch {
+          setMatchResults([])
+        }
+      } else {
+        const results = await igdbSearch(matchSearch, game?.platform?.igdb_id)
+        setMatchResults(results)
+      }
     } finally {
       setMatchLoading(false)
     }
@@ -431,7 +442,7 @@ export default function GameDetailPage() {
                   value={matchSearch}
                   onChange={e => setMatchSearch(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleIGDBSearch()}
-                  placeholder="Search IGDB..."
+                  placeholder="Search by name or paste IGDB ID..."
                   className="flex-1 bg-steam-bg-deep border border-steam-border text-steam-text
                              rounded px-3 py-2 text-sm focus:outline-none focus:border-steam-blue/50"
                   autoFocus
