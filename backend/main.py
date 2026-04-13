@@ -5,13 +5,14 @@ import os
 import shutil
 from pathlib import Path
 from typing import Optional, List
+from urllib.parse import quote
 
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, delete
@@ -38,6 +39,9 @@ DATA_PATH = os.getenv("DATA_PATH", "/data")
 IGDB_CLIENT_ID = os.getenv("IGDB_CLIENT_ID", "")
 IGDB_CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET", "")
 FIREBASE_CREDENTIALS = os.getenv("FIREBASE_CREDENTIALS", "")
+USE_X_ACCEL_REDIRECT = os.getenv("USE_X_ACCEL_REDIRECT", "false").lower() in {"1", "true", "yes", "on"}
+NGINX_INTERNAL_ROM_PREFIX = os.getenv("NGINX_INTERNAL_ROM_PREFIX", "/protected-roms").rstrip("/")
+ROM_DOWNLOAD_CACHE_SECONDS = int(os.getenv("ROM_DOWNLOAD_CACHE_SECONDS", "31536000"))
 
 # Initialize Firebase Admin using service account JSON file
 _firebase_enabled = False
@@ -85,6 +89,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _download_headers(filename: str) -> dict[str, str]:
+    safe_filename = filename.replace("\\", "_").replace('"', '\\"')
+    return {
+        "Content-Disposition": f'attachment; filename="{safe_filename}"; filename*=UTF-8\'\'{quote(filename)}',
+        "Cache-Control": f"public, max-age={ROM_DOWNLOAD_CACHE_SECONDS}, immutable",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+
+def _rom_download_response(path: str, filename: str, rom_path: str):
+    headers = _download_headers(filename)
+
+    if USE_X_ACCEL_REDIRECT:
+        try:
+            resolved_path = Path(path).resolve()
+            resolved_rom_path = Path(rom_path).resolve()
+            relative_path = resolved_path.relative_to(resolved_rom_path).as_posix()
+            headers["X-Accel-Redirect"] = f"{NGINX_INTERNAL_ROM_PREFIX}/{quote(relative_path, safe='/')}"
+            headers["Content-Type"] = "application/octet-stream"
+            return Response(status_code=200, headers=headers)
+        except ValueError:
+            logger.warning("X-Accel download path outside ROM path, falling back to FileResponse: %s", path)
+
+    return FileResponse(
+        path=path,
+        filename=filename,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": headers["Cache-Control"], "X-Content-Type-Options": headers["X-Content-Type-Options"]},
+    )
 
 
 @app.on_event("startup")
@@ -661,11 +696,7 @@ async def download_game(game_id: int, db: AsyncSession = Depends(get_db)):
     if not os.path.isfile(full_path):
         raise HTTPException(404, "ROM file not found on disk")
 
-    return FileResponse(
-        path=full_path,
-        filename=game.file_name,
-        media_type="application/octet-stream",
-    )
+    return _rom_download_response(full_path, game.file_name, rom_path)
 
 
 @app.post("/api/games/{game_id}/refresh")
@@ -1411,11 +1442,12 @@ async def download_game_extra(game_id: int, extra_id: int, db: AsyncSession = De
         raise HTTPException(404, "Extra file not found")
     if not os.path.isfile(extra.file_path):
         raise HTTPException(404, "File not found on disk")
-    return FileResponse(
-        path=extra.file_path,
-        filename=extra.filename,
-        media_type="application/octet-stream",
+    rom_path_result = await db.execute(
+        select(models.Setting).where(models.Setting.key == "rom_path")
     )
+    rom_path_setting = rom_path_result.scalar_one_or_none()
+    rom_path = (rom_path_setting.value if rom_path_setting else None) or ROM_PATH
+    return _rom_download_response(extra.file_path, extra.filename, rom_path)
 
 
 @app.delete("/api/games/{game_id}/extras/{extra_id}")

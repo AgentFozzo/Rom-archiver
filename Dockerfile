@@ -27,6 +27,7 @@ FROM python:3.11-slim
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    nginx \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -37,6 +38,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend source
 COPY backend/ ./
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY docker/start.sh /app/start.sh
 
 # Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./static
@@ -46,4 +49,7 @@ RUN mkdir -p /data/images /data/dats /roms
 
 EXPOSE 8096
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8096", "--workers", "1"]
+ENV USE_X_ACCEL_REDIRECT=true
+ENV NGINX_INTERNAL_ROM_PREFIX=/protected-roms
+
+CMD ["sh", "/app/start.sh"]
